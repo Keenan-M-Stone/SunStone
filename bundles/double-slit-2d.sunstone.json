@@ -1,0 +1,72 @@
+{
+  "manifest": {
+    "format": "sunstone.bundle",
+    "version": "0.1",
+    "name": "double-slit-2d",
+    "mode": "fdtd",
+    "dimension": "2d",
+    "created_at": "2026-01-23T00:00:00Z",
+    "cad_path": "cad.json",
+    "spec_path": "spec.json",
+    "extra": {}
+  },
+  "cad": {
+    "materials": [
+      {"id": "vac", "label": "Vacuum", "eps": 1.0, "color": "#94a3b8", "model": "constant"},
+      {"id": "pec", "label": "PEC", "eps": 1.0, "color": "#e2e8f0", "model": "pec"}
+    ],
+    "geometry": [
+      {"id": "geom-top", "shape": "block", "center": [0, 4.25e-6], "centerZ": 0, "size": [0.5e-6, 3.25e-6], "sizeZ": 0, "materialId": "pec"},
+      {"id": "geom-mid", "shape": "block", "center": [0, 0.0], "centerZ": 0, "size": [0.5e-6, 2.0e-6], "sizeZ": 0, "materialId": "pec"},
+      {"id": "geom-bot", "shape": "block", "center": [0, -4.25e-6], "centerZ": 0, "size": [0.5e-6, 3.25e-6], "sizeZ": 0, "materialId": "pec"}
+    ],
+    "sources": [
+      {
+        "id": "src-1",
+        "position": [-9.0e-6, 0],
+        "z": 0,
+        "component": "Ez",
+        "centerFreq": 3.0e14,
+        "fwidth": 6.0e12,
+        "type": "gaussian_pulse"
+      }
+    ],
+    "monitors": [
+      {"id": "mon-1", "position": [9.0e-6, 0], "z": 0, "components": ["Ez"], "dt": 1e-16}
+    ],
+    "domain": {"cell_size": [2.0e-5, 1.2e-5, 0], "resolution": 40, "pml": [2.0e-6, 2.0e-6, 0]},
+    "view": {"center": [0, 0], "zoom": 1, "background": "#0b1220"},
+    "waveforms": [
+      {
+        "id": "wf-sine",
+        "label": "Sine reference",
+        "kind": "analytic",
+        "data": {"type": "sine", "frequency": 3.0e14, "amplitude": 1.0, "phase": 0.0, "duration": 2.5e-13}
+      }
+    ],
+    "meshes": []
+  },
+  "spec": {
+    "version": "0.1",
+    "units": {"length": "m", "time": "s", "frequency": "Hz"},
+    "domain": {"cell_size": [2.0e-5, 1.2e-5, 0], "resolution": 40, "symmetry": [], "dimension": "2d"},
+    "boundary_conditions": {"type": "pml", "pml_thickness": [2.0e-6, 2.0e-6, 0]},
+    "materials": {
+      "vac": {"model": "constant", "eps": 1.0},
+      "pec": {"model": "pec", "eps": 1.0}
+    },
+    "geometry": [
+      {"type": "block", "size": [0.5e-6, 3.25e-6, 0], "center": [0, 4.25e-6, 0], "material": "pec"},
+      {"type": "block", "size": [0.5e-6, 2.0e-6, 0], "center": [0, 0.0, 0], "material": "pec"},
+      {"type": "block", "size": [0.5e-6, 3.25e-6, 0], "center": [0, -4.25e-6, 0], "material": "pec"}
+    ],
+    "sources": [
+      {"type": "gaussian_pulse", "center_freq": 3.0e14, "fwidth": 6.0e12, "component": "Ez", "position": [-9.0e-6, 0, 0], "size": [0, 1.08e-5, 0], "waveform_id": "wf-sine"}
+    ],
+    "monitors": [
+      {"type": "point", "id": "mon-1", "position": [9.0e-6, 0, 0], "components": ["Ez"], "dt": 1e-16}
+    ],
+    "run_control": {"until": "time", "max_time": 2.0e-13},
+    "resources": {"mode": "local"}
+  }
+}

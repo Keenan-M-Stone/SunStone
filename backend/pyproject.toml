@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sunstone-backend"
+version = "0.1.0"
+description = "SunStone control plane (FastAPI) + local worker runner"
+readme = "README.md"
+requires-python = ">=3.13"
+license = {text = "TBD"}
+authors = [{name = "SunStone contributors"}]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.2",
+  "python-dotenv>=1.0",
+  "typer>=0.12",
+  "rich>=13.7",
+  "psutil>=5.9",
+  "zarr>=3",
+  "numpy>=2",
+]
+
+[project.scripts]
+sunstone-api = "sunstone_backend.cli:api_entry"
+sunstone-worker = "sunstone_backend.cli:worker_entry"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sunstone_backend"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.13"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict = false
+
+[tool.pytest.ini_options]
+addopts = "-q"

@@ -1,0 +1,22 @@
+name: sunstone
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - ruff
+  - fastapi
+  - h5py
+  - mypy
+  - pytest
+  - scipy
+  - numpy
+  - uvicorn
+  - xarray
+  - zarr
+  - typer
+  - distributed
+  - dask
+  - python=3.13
+  - python-dotenv
+  - rich
+  - pydantic-settings

@@ -1,0 +1,22 @@
+# SunStone runtime data / artifacts
+.sunstone/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env
+.env
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# OS/editor
+.DS_Store
+.vscode/
