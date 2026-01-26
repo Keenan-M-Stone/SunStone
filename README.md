@@ -69,4 +69,5 @@ From the UI:
 
 Meep’s Python bindings may not be available for the newest Python.
 The control plane can remain on Python 3.13 while the worker runs under a different interpreter.
-See [backend/README.md](backend/README.md) for the `python_executable` submit option.
+See [backend/README.md](backend/README.md) for the `python_executable` submit option. The UI Run panel
+also exposes a “Meep Python executable” field when the backend is set to `meep`.

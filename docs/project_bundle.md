@@ -2,6 +2,8 @@
 
 A portable, versioned container for sharing SunStone models and simulation specs.
 
+Project bundles intentionally **do not** include user configuration (keymaps, UI prefs, run settings). Those live in a separate optional config file so importing a bundle won’t change someone’s local preferences.
+
 ## Structure
 
 A bundle is a directory (or zip) with these files:
@@ -11,6 +13,16 @@ manifest.json
 cad.json
 spec.json
 ```
+
+## Optional config file (separate)
+
+User settings are exported to a separate file, typically named:
+
+```
+<project>.sunstone.config.json
+```
+
+This config can be imported independently if a user wants to restore their preferences for a specific project; otherwise the app falls back to local defaults.
 
 ### manifest.json
 

@@ -7,6 +7,7 @@ import { apiBaseUrl } from './config'
 import {
   createProject,
   createRun,
+  cancelRun,
   downloadArtifactUrl,
   getArtifacts,
   getLogs,
@@ -86,6 +87,11 @@ type KeymapConfig = {
   cancel: string
   nudge: string
   nudgeFast: string
+  cycleTool: string
+  rasterHold: string
+  rasterToggle: string
+  viewReset: string
+  viewFrame: string
   toolSelect: string
   toolInsert: string
   toolDraw: string
@@ -97,11 +103,22 @@ type KeymapConfig = {
   drawPolygon: string
   drawArc: string
 }
+type ActionLogEntry = {
+  id: string
+  ts: number
+  input: string
+  interpreted?: string
+}
+type EditPointSelection = {
+  id: string
+  index: number
+  kind: 'poly' | 'arc'
+}
 type SimulationDimension = '2d' | '3d'
 type WorkspaceMode = 'cad' | 'fdtd'
 type WaveformDef = { id: string; label: string; kind: 'samples' | 'analytic'; data: Record<string, unknown> }
 type MeshAsset = { id: string; name: string; format: string; content: string }
-type ImportKind = 'bundle' | 'materials' | 'sources' | 'geometry' | 'waveforms' | 'mesh'
+type ImportKind = 'bundle' | 'config' | 'materials' | 'sources' | 'geometry' | 'waveforms' | 'mesh'
 type DisplayUnit = 'm' | 'um' | 'nm'
 type InsertShape = 'rectangle' | 'square' | 'ellipse' | 'circle' | 'source' | 'detector'
 type DrawMode = 'polyline' | 'polygon' | 'arc'
@@ -128,6 +145,11 @@ const DEFAULT_KEYMAP: KeymapConfig = {
   cancel: 'escape',
   nudge: 'arrow',
   nudgeFast: 'shift+arrow',
+  cycleTool: 'tab',
+  rasterHold: 'f1',
+  rasterToggle: 'f2',
+  viewReset: '',
+  viewFrame: '',
   toolSelect: 'v',
   toolInsert: 'i',
   toolDraw: 'd',
@@ -403,9 +425,7 @@ function App() {
   )
   const [isSpacePressed, setIsSpacePressed] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
-  const [helpTab, setHelpTab] = useState<'about' | 'keymap' | 'docs' | 'spec' | 'readme'>(
-    'about',
-  )
+  const [helpTab, setHelpTab] = useState<'about' | 'keymap' | 'docs'>('about')
   const [keymap, setKeymap] = useState<KeymapConfig>(DEFAULT_KEYMAP)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [displayUnits, setDisplayUnits] = useState<DisplayUnit>('um')
@@ -447,9 +467,19 @@ function App() {
   const [extrudeOffset, setExtrudeOffset] = useState<[number, number] | null>(null)
   const [nudgeStep, setNudgeStep] = useState(2e-8)
   const [nudgeStepFast, setNudgeStepFast] = useState(1e-7)
-  const [debugInputs, setDebugInputs] = useState(false)
-  const [lastInput, setLastInput] = useState<string | null>(null)
-  const [inputLog, setInputLog] = useState<string[]>([])
+  const [actionLogOpen, setActionLogOpen] = useState(false)
+  const [actionLogEnabled, setActionLogEnabled] = useState(true)
+  const [actionLogEntries, setActionLogEntries] = useState<ActionLogEntry[]>([])
+  const [actionLogPos, setActionLogPos] = useState({ x: 24, y: 92, width: 380, height: 320 })
+  const actionLogListRef = useRef<HTMLDivElement | null>(null)
+  const actionLogDragRef = useRef<{ offsetX: number; offsetY: number; dragging: boolean }>({
+    offsetX: 0,
+    offsetY: 0,
+    dragging: false,
+  })
+  const [editPointSelection, setEditPointSelection] = useState<EditPointSelection | null>(null)
+  const [editPointHover, setEditPointHover] = useState<EditPointSelection | null>(null)
+  const editPointSelectionRef = useRef<EditPointSelection | null>(null)
   const [keymapAddGlobalAction, setKeymapAddGlobalAction] = useState<keyof KeymapConfig>('undo')
   const [keymapAddGlobalValue, setKeymapAddGlobalValue] = useState('')
   const [keymapAddToolAction, setKeymapAddToolAction] = useState<keyof KeymapConfig>('toolSelect')
@@ -515,6 +545,7 @@ function App() {
 
   const [run, setRun] = useState<RunRecord | null>(null)
   const [backend, setBackend] = useState('dummy')
+  const [meepPythonExecutable, setMeepPythonExecutable] = useState('')
   const [movieDt, setMovieDt] = useState(2e-15)
   const [movieStart, setMovieStart] = useState(0)
   const [movieStop, setMovieStop] = useState(2e-13)
@@ -587,6 +618,7 @@ function App() {
         snapDistancePx: number
         nudgeStep: number
         nudgeStepFast: number
+        meepPythonExecutable: string
       }>
       if (parsed.displayUnits) setDisplayUnits(parsed.displayUnits)
       if (Number.isFinite(parsed.displayFontPt)) setDisplayFontPt(parsed.displayFontPt as number)
@@ -597,6 +629,7 @@ function App() {
       if (Number.isFinite(parsed.snapDistancePx)) setSnapDistancePx(parsed.snapDistancePx as number)
       if (Number.isFinite(parsed.nudgeStep)) setNudgeStep(parsed.nudgeStep as number)
       if (Number.isFinite(parsed.nudgeStepFast)) setNudgeStepFast(parsed.nudgeStepFast as number)
+      if (typeof parsed.meepPythonExecutable === 'string') setMeepPythonExecutable(parsed.meepPythonExecutable)
     } catch (err) {
       console.warn('Failed to load settings preferences', err)
     }
@@ -615,6 +648,7 @@ function App() {
         snapDistancePx,
         nudgeStep,
         nudgeStepFast,
+        meepPythonExecutable,
       }),
     )
   }, [
@@ -627,6 +661,7 @@ function App() {
     snapDistancePx,
     nudgeStep,
     nudgeStepFast,
+    meepPythonExecutable,
   ])
 
   function pushHistory(next?: { geometry: GeometryItem[]; sources: SourceItem[]; monitors: MonitorItem[] }) {
@@ -679,17 +714,29 @@ function App() {
         matchKeybinding(e, keymap.duplicate) ||
         matchKeybinding(e, keymap.delete)
       if (!canvasFocused && !globalAction) return
-      if (e.code === 'F1') {
+      if (matchKeybinding(e, keymap.rasterHold)) {
         e.preventDefault()
         setLastResolutionMode('raster')
         setShowResolutionPreview(true)
+        logAction(`key ${comboFromEvent(e)}`, 'raster preview hold')
       }
-      if (e.code === 'F2') {
+      if (matchKeybinding(e, keymap.rasterToggle)) {
         e.preventDefault()
         setResolutionPreviewMode((prev) => (prev === 'off' ? 'raster' : 'off'))
         setLastResolutionMode('raster')
+        logAction(`key ${comboFromEvent(e)}`, 'raster preview toggle')
       }
-      if (e.key === 'Tab') {
+      if (matchKeybinding(e, keymap.viewReset)) {
+        e.preventDefault()
+        resetView()
+        logAction(`key ${comboFromEvent(e)}`, 'view reset')
+      }
+      if (matchKeybinding(e, keymap.viewFrame)) {
+        e.preventDefault()
+        frameObjects()
+        logAction(`key ${comboFromEvent(e)}`, 'frame objects')
+      }
+      if (matchKeybinding(e, keymap.cycleTool)) {
         e.preventDefault()
         if ((activeTool === 'draw' || activeTool === 'shape') && lastCreatedId) {
           setSelected(lastCreatedId, 'geometry')
@@ -700,18 +747,19 @@ function App() {
           ? (currentIndex - 1 + cycle.length) % cycle.length
           : (currentIndex + 1) % cycle.length
         setActiveTool(cycle[nextIndex])
+        logAction(`key ${comboFromEvent(e)}`, `cycle tool -> ${cycle[nextIndex]}`)
         return
       }
       if (activeTool === 'draw' && matchKeybinding(e, keymap.undo)) {
         e.preventDefault()
         popLastDrawPoint()
-        if (debugInputs) setLastInput(`key ${comboFromEvent(e)} -> draw undo`)
+        logAction(`key ${comboFromEvent(e)}`, 'draw undo point')
         return
       }
       if (matchKeybinding(e, keymap.toolSelect)) {
         e.preventDefault()
         setActiveTool('select')
-        if (debugInputs) logInput(`key ${comboFromEvent(e)} -> select`)
+        logAction(`key ${comboFromEvent(e)}`, 'tool select')
         return
       }
       if (matchKeybinding(e, keymap.toolInsert)) {
@@ -719,75 +767,79 @@ function App() {
         if (insertShape === 'source') setActiveTool('source')
         else if (insertShape === 'detector') setActiveTool('monitor')
         else setActiveTool('shape')
-        if (debugInputs) logInput(`key ${comboFromEvent(e)} -> insert`)
+        logAction(`key ${comboFromEvent(e)}`, 'tool insert')
         return
       }
       if (matchKeybinding(e, keymap.toolDraw)) {
         e.preventDefault()
         setActiveTool('draw')
-        if (debugInputs) logInput(`key ${comboFromEvent(e)} -> draw`)
+        logAction(`key ${comboFromEvent(e)}`, `tool draw (${drawMode})`)
         return
       }
       if (matchKeybinding(e, keymap.toolMeasure)) {
         e.preventDefault()
         setActiveTool('measure')
-        if (debugInputs) logInput(`key ${comboFromEvent(e)} -> measure`)
+        logAction(`key ${comboFromEvent(e)}`, 'tool measure')
         return
       }
       if (matchKeybinding(e, keymap.toolExtrude)) {
         e.preventDefault()
         setActiveTool('extrude')
-        if (debugInputs) logInput(`key ${comboFromEvent(e)} -> extrude`)
+        logAction(`key ${comboFromEvent(e)}`, 'tool extrude')
         return
       }
       if (matchKeybinding(e, keymap.toolSource)) {
         e.preventDefault()
         setInsertShape('source')
         setActiveTool('source')
+        logAction(`key ${comboFromEvent(e)}`, 'tool source')
         return
       }
       if (matchKeybinding(e, keymap.toolDetector)) {
         e.preventDefault()
         setInsertShape('detector')
         setActiveTool('monitor')
+        logAction(`key ${comboFromEvent(e)}`, 'tool detector')
         return
       }
       if (matchKeybinding(e, keymap.drawPolyline)) {
         e.preventDefault()
         applyDrawMode('polyline')
         setActiveTool('draw')
+        logAction(`key ${comboFromEvent(e)}`, 'draw mode polyline')
         return
       }
       if (matchKeybinding(e, keymap.drawPolygon)) {
         e.preventDefault()
         applyDrawMode('polygon')
         setActiveTool('draw')
+        logAction(`key ${comboFromEvent(e)}`, 'draw mode polygon')
         return
       }
       if (matchKeybinding(e, keymap.drawArc)) {
         e.preventDefault()
         applyDrawMode('arc')
         setActiveTool('draw')
+        logAction(`key ${comboFromEvent(e)}`, 'draw mode arc')
         return
       }
       if (matchKeybinding(e, keymap.cancel)) {
         setSketchPoints([])
         setArcPoints([])
         setSketchActive(false)
+        logAction(`key ${comboFromEvent(e)}`, 'cancel/escape')
         return
       }
       if (matchKeybinding(e, keymap.undo)) {
         e.preventDefault()
         undo()
-        if (debugInputs) setLastInput(`key ${comboFromEvent(e)} -> undo`)
-        if (debugInputs) logInput(`key ${comboFromEvent(e)} -> undo`)
+        logAction(`key ${comboFromEvent(e)}`, 'undo')
         return
       }
       if (matchKeybinding(e, keymap.redo)) {
         e.preventDefault()
         redo()
-        if (debugInputs) setLastInput(`key ${comboFromEvent(e)} -> redo`)
-        if (debugInputs) logInput(`key ${comboFromEvent(e)} -> redo`)
+        logAction(`key ${comboFromEvent(e)}`, 'redo')
         return
       }
       if (matchKeybinding(e, keymap.copy)) {
@@ -797,29 +849,93 @@ function App() {
           sources: sources.filter((s) => isSelected(s.id, 'source')),
           monitors: monitors.filter((m) => isSelected(m.id, 'monitor')),
         }
-        if (debugInputs) setLastInput(`key ${comboFromEvent(e)} -> copy`)
+        logAction(`key ${comboFromEvent(e)}`, 'copy')
         return
       }
       if (matchKeybinding(e, keymap.paste)) {
         e.preventDefault()
         pasteClipboard()
-        if (debugInputs) setLastInput(`key ${comboFromEvent(e)} -> paste`)
+        logAction(`key ${comboFromEvent(e)}`, 'paste')
         return
       }
       if (matchKeybinding(e, keymap.duplicate)) {
         e.preventDefault()
         duplicateSelection()
-        if (debugInputs) setLastInput(`key ${comboFromEvent(e)} -> duplicate`)
+        logAction(`key ${comboFromEvent(e)}`, 'duplicate')
         return
       }
       if (matchKeybinding(e, keymap.delete)) {
         e.preventDefault()
         deleteSelection()
-        if (debugInputs) setLastInput(`key ${comboFromEvent(e)} -> delete`)
+        logAction(`key ${comboFromEvent(e)}`, 'delete')
         return
       }
       const isFast = matchKeybinding(e, keymap.nudgeFast)
       const isNudge = matchKeybinding(e, keymap.nudge)
+      const activeEditPoint = editPointSelectionRef.current ?? editPointSelection
+      if (activeTool === 'edit' && activeEditPoint) {
+        const isCycleLeft = e.key === '4' || e.code === 'Numpad4'
+        const isCycleRight = e.key === '6' || e.code === 'Numpad6'
+        if (isCycleLeft || isCycleRight) {
+          e.preventDefault()
+          const geom = geometry.find((g) => g.id === activeEditPoint.id)
+          if (!geom) return
+          const pointsCount =
+            activeEditPoint.kind === 'arc'
+              ? 3
+              : Math.max(geom.points?.length ?? 0, 0)
+          if (pointsCount <= 0) return
+          const delta = isCycleRight ? 1 : -1
+          const nextIndex = (activeEditPoint.index + delta + pointsCount) % pointsCount
+          const nextSelection = { ...activeEditPoint, index: nextIndex }
+          setEditPointSelection(nextSelection)
+          editPointSelectionRef.current = nextSelection
+          logAction(`key ${comboFromEvent(e)}`, `edit point select ${nextIndex}`)
+          return
+        }
+        if (isNudge && !e.shiftKey) {
+          e.preventDefault()
+          const step = nudgeStep
+          const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+          const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+          if (dx === 0 && dy === 0) return
+          setGeometry((prev) =>
+            prev.map((g) => {
+              if (g.id !== activeEditPoint.id) return g
+              if (activeEditPoint.kind === 'arc' && g.arc) {
+                const nextArc = { ...g.arc }
+                if (activeEditPoint.index === 0) nextArc.start = [nextArc.start[0] + dx, nextArc.start[1] + dy]
+                if (activeEditPoint.index === 1) {
+                  const control = nextArc.control ?? nextArc.start
+                  nextArc.control = [control[0] + dx, control[1] + dy]
+                }
+                if (activeEditPoint.index === 2) nextArc.end = [nextArc.end[0] + dx, nextArc.end[1] + dy]
+                return { ...g, arc: nextArc }
+              }
+              if (!g.points || g.points.length === 0) return g
+              const pts = g.points.map((p, idx) =>
+                idx === activeEditPoint.index ? ([p[0] + dx, p[1] + dy] as [number, number]) : p,
+              )
+              const isClosed =
+                g.shape === 'polyline' &&
+                g.points.length > 2 &&
+                Math.hypot(g.points[0][0] - g.points[g.points.length - 1][0], g.points[0][1] - g.points[g.points.length - 1][1]) <=
+                  snapDistanceWorld
+              if (isClosed) {
+                if (activeEditPoint.index === 0) pts[pts.length - 1] = pts[0]
+                if (activeEditPoint.index === pts.length - 1) pts[0] = pts[pts.length - 1]
+              }
+              const nextCenter: [number, number] = [
+                pts.reduce((acc, p) => acc + p[0], 0) / pts.length,
+                pts.reduce((acc, p) => acc + p[1], 0) / pts.length,
+              ]
+              return { ...g, points: pts, center: nextCenter }
+            }),
+          )
+          logAction(`key ${comboFromEvent(e)}`, `edit point nudge dx=${dx} dy=${dy}`)
+          return
+        }
+      }
       if (isFast || isNudge) {
         e.preventDefault()
         const nudge = isFast ? nudgeStepFast : nudgeStep
@@ -830,8 +946,9 @@ function App() {
     }
     function onKeyUp(e: KeyboardEvent) {
       if (!canvasFocused) return
-      if (e.code === 'F1') {
+      if (matchKeybinding(e, keymap.rasterHold)) {
         setShowResolutionPreview(false)
+        logAction(`key ${comboFromEvent(e)}`, 'raster preview release')
       }
     }
 
@@ -855,13 +972,93 @@ function App() {
     activeTool,
     lastCreatedId,
     lastResolutionMode,
+    actionLogEnabled,
   ])
+
+  useEffect(() => {
+    const onFocus = () => logAction('focus window', 'window focus')
+    const onBlur = () => logAction('blur window', 'window blur')
+    const onVisibility = () => logAction(`visibility ${document.visibilityState}`, 'visibility change')
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [actionLogEnabled])
+
+  useEffect(() => {
+    if (!actionLogOpen) return
+    const list = actionLogListRef.current
+    if (!list) return
+    list.scrollTop = list.scrollHeight
+  }, [actionLogOpen, actionLogEntries.length])
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!actionLogDragRef.current.dragging) return
+      setActionLogPos((prev) => ({
+        ...prev,
+        x: Math.max(8, e.clientX - actionLogDragRef.current.offsetX),
+        y: Math.max(8, e.clientY - actionLogDragRef.current.offsetY),
+      }))
+    }
+    function onUp() {
+      if (!actionLogDragRef.current.dragging) return
+      actionLogDragRef.current.dragging = false
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
 
   useEffect(() => {
     if (activeTool !== 'select' && activeTool !== 'edit') {
       setLastPrimaryTool(activeTool)
     }
   }, [activeTool])
+
+  useEffect(() => {
+    if (activeTool !== 'edit') {
+      setEditPointSelection(null)
+      setEditPointHover(null)
+      return
+    }
+    if (selectedType !== 'geometry' || !selectedId) {
+      setEditPointSelection(null)
+      return
+    }
+    const geom = geometry.find((g) => g.id === selectedId)
+    if (!geom) {
+      setEditPointSelection(null)
+      return
+    }
+    if (geom.shape === 'arc' && geom.arc) {
+      setEditPointSelection((prev) =>
+        prev?.id === geom.id && prev.kind === 'arc'
+          ? prev
+          : { id: geom.id, index: 2, kind: 'arc' },
+      )
+      return
+    }
+    if (!geom.points || geom.points.length === 0) {
+      setEditPointSelection(null)
+      return
+    }
+    setEditPointSelection((prev) => {
+      if (prev?.id === geom.id && prev.kind === 'poly' && prev.index < geom.points.length) return prev
+      return { id: geom.id, index: geom.points.length - 1, kind: 'poly' }
+    })
+  }, [activeTool, selectedId, selectedType, geometry])
+
+  useEffect(() => {
+    editPointSelectionRef.current = editPointSelection
+  }, [editPointSelection])
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -1423,9 +1620,17 @@ function App() {
     return () => window.clearInterval(t)
   }, [run?.id])
 
+  useEffect(() => {
+    if (project?.name) setProjectName(project.name)
+  }, [project?.id])
+
 
   async function onCreateProject() {
     setError(null)
+    if (!projectName.trim()) {
+      setError('Project name is required.')
+      return
+    }
     setBusy('Creating project…')
     try {
       const p = await createProject(projectName)
@@ -1467,9 +1672,27 @@ function App() {
     }
     setBusy('Submitting run…')
     try {
-      await submitRun(run.id, backend)
+      await submitRun(run.id, backend, backend === 'meep' && meepPythonExecutable ? meepPythonExecutable : undefined)
       const r = await getRun(run.id)
       setRun(r)
+    } catch (e: any) {
+      setError(e?.message ?? String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function onCancelRun() {
+    setError(null)
+    if (!run) {
+      setError('Create a run first.')
+      return
+    }
+    setBusy('Canceling run…')
+    try {
+      await cancelRun(run.id)
+      const refreshed = await getRun(run.id)
+      setRun(refreshed)
     } catch (e: any) {
       setError(e?.message ?? String(e))
     } finally {
@@ -2019,6 +2242,47 @@ function App() {
       return
     }
 
+    if (activeTool === 'edit') {
+      if (selectedType !== 'geometry' || !selectedId) {
+        setEditPointHover(null)
+      } else {
+        const point = getWorldPoint(e)
+        const geom = geometry.find((g) => g.id === selectedId)
+        if (!point || !geom) {
+          setEditPointHover(null)
+        } else if (geom.shape === 'arc' && geom.arc) {
+          const arcPoints: Array<[number, number]> = [
+            geom.arc.start,
+            geom.arc.control ?? geom.arc.start,
+            geom.arc.end,
+          ]
+          let bestIndex = -1
+          let bestDist = editSelectRadius
+          arcPoints.forEach((p, idx) => {
+            const d = Math.hypot(point[0] - p[0], point[1] - p[1])
+            if (d < bestDist) {
+              bestDist = d
+              bestIndex = idx
+            }
+          })
+          setEditPointHover(bestIndex >= 0 ? { id: geom.id, index: bestIndex, kind: 'arc' } : null)
+        } else if (geom.points?.length) {
+          let bestIndex = -1
+          let bestDist = editSelectRadius
+          geom.points.forEach((p, idx) => {
+            const d = Math.hypot(point[0] - p[0], point[1] - p[1])
+            if (d < bestDist) {
+              bestDist = d
+              bestIndex = idx
+            }
+          })
+          setEditPointHover(bestIndex >= 0 ? { id: geom.id, index: bestIndex, kind: 'poly' } : null)
+        } else {
+          setEditPointHover(null)
+        }
+      }
+    }
+
     handleSelectMove(e)
 
     if (activeTool === 'measure' && measureStart) {
@@ -2107,8 +2371,53 @@ function App() {
     }
   }
 
-  function logInput(message: string) {
-    setInputLog((prev) => [message, ...prev].slice(0, 8))
+  function logAction(input: string, interpreted?: string) {
+    if (!actionLogEnabled) return
+    const entry: ActionLogEntry = {
+      id: nextId('log'),
+      ts: Date.now(),
+      input,
+      interpreted,
+    }
+    setActionLogEntries((prev) => [...prev, entry].slice(-400))
+  }
+
+  function formatActionTimestamp(ts: number) {
+    const date = new Date(ts)
+    const time = date.toLocaleTimeString('en-US', { hour12: false })
+    const ms = String(date.getMilliseconds()).padStart(3, '0')
+    return `${time}.${ms}`
+  }
+
+  function formatMousePosition(e: MouseEvent<SVGSVGElement>) {
+    const point = getWorldPoint(e)
+    if (!point) return `screen(${Math.round(e.clientX)},${Math.round(e.clientY)}) world(—)`
+    return `screen(${Math.round(e.clientX)},${Math.round(e.clientY)}) world(${point[0].toExponential(3)},${point[1].toExponential(3)})`
+  }
+
+  function actionLogText() {
+    return actionLogEntries
+      .map((entry) => `${formatActionTimestamp(entry.ts)}\t${entry.input}\t${entry.interpreted ?? ''}`)
+      .join('\n')
+  }
+
+  async function copyActionLog() {
+    const text = actionLogText()
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      logAction('copy action log', 'clipboard write')
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+      logAction('copy action log', 'clipboard fallback')
+    }
   }
 
   function updateKeymapField(field: keyof KeymapConfig, value: string) {
@@ -2119,6 +2428,7 @@ function App() {
     setCursorPct(null)
     setSnapPreview(null)
     handlePanEnd()
+    logAction('mouseLeave canvas')
   }
 
   function handleCanvasWheel(e: WheelEvent<SVGSVGElement>) {
@@ -2485,7 +2795,7 @@ function App() {
       if (!res.ok) throw new Error(`Unable to load ${path} (${res.status})`)
       const text = await res.text()
       setReadmeContent(text)
-      setHelpTab('readme')
+      setHelpTab('docs')
     } catch (err) {
       setReadmeError(err instanceof Error ? err.message : String(err))
     }
@@ -2530,6 +2840,78 @@ function App() {
     }
 
     downloadJson({ manifest, cad, spec }, `${manifest.name}.sunstone.json`)
+  }
+
+  function saveConfigBundle() {
+    const payload = {
+      format: 'sunstone.config',
+      version: '0.1',
+      project_name: projectName || 'sunstone-project',
+      display: {
+        units: displayUnits,
+        font_pt: displayFontPt,
+        overlay_autoscale: overlayAutoscale,
+        overlay_fixed_px: overlayFixedPx,
+        overlay_line_scale: overlayLineScale,
+        background: backgroundColor,
+      },
+      view: {
+        center: viewCenter,
+        zoom,
+        slice_z: sliceZ,
+      },
+      snapping: {
+        enabled: snapEnabled,
+        distance_px: snapDistancePx,
+      },
+      nudging: {
+        step: nudgeStep,
+        step_fast: nudgeStepFast,
+      },
+      keymap,
+      run: {
+        backend,
+        meep_python_executable: meepPythonExecutable || null,
+      },
+    }
+    downloadJson(payload, `${payload.project_name}.sunstone.config.json`)
+  }
+
+  function applyConfigBundle(payload: any) {
+    if (!payload || payload.format !== 'sunstone.config') {
+      throw new Error('Invalid config file format.')
+    }
+
+    if (payload.project_name) setProjectName(String(payload.project_name))
+
+    const display = payload.display ?? {}
+    if (display.units) setDisplayUnits(display.units as DisplayUnit)
+    if (Number.isFinite(display.font_pt)) setDisplayFontPt(Number(display.font_pt))
+    if (typeof display.overlay_autoscale === 'boolean') setOverlayAutoscale(display.overlay_autoscale)
+    if (Number.isFinite(display.overlay_fixed_px)) setOverlayFixedPx(Number(display.overlay_fixed_px))
+    if (Number.isFinite(display.overlay_line_scale)) setOverlayLineScale(Number(display.overlay_line_scale))
+    if (display.background) setBackgroundColor(String(display.background))
+
+    const view = payload.view ?? {}
+    if (Array.isArray(view.center) && view.center.length >= 2) {
+      setViewCenter([Number(view.center[0] ?? 0), Number(view.center[1] ?? 0)])
+    }
+    if (Number.isFinite(view.zoom)) setZoom(Number(view.zoom))
+    if (Number.isFinite(view.slice_z)) setSliceZ(Number(view.slice_z))
+
+    const snapping = payload.snapping ?? {}
+    if (typeof snapping.enabled === 'boolean') setSnapEnabled(snapping.enabled)
+    if (Number.isFinite(snapping.distance_px)) setSnapDistancePx(Number(snapping.distance_px))
+
+    const nudging = payload.nudging ?? {}
+    if (Number.isFinite(nudging.step)) setNudgeStep(Number(nudging.step))
+    if (Number.isFinite(nudging.step_fast)) setNudgeStepFast(Number(nudging.step_fast))
+
+    if (payload.keymap) setKeymap(normalizeKeymap(payload.keymap))
+
+    const run = payload.run ?? {}
+    if (run.backend) setBackend(String(run.backend))
+    if (typeof run.meep_python_executable === 'string') setMeepPythonExecutable(run.meep_python_executable)
   }
 
   function exportMaterials() {
@@ -2747,6 +3129,11 @@ function App() {
         setFileMenuOpen(false)
         return
       }
+      if (importKind === 'config') {
+        applyConfigBundle(payload)
+        setFileMenuOpen(false)
+        return
+      }
       if (importKind === 'materials') {
         const mats = (payload.materials ?? payload) as MaterialDef[]
         setMaterials(
@@ -2866,6 +3253,14 @@ function App() {
     panStartRef.current = null
   }
 
+  function resetView() {
+    setZoom(1)
+    setViewCenter([0, 0])
+    setSliceZ(0)
+    setIsPanning(false)
+    panStartRef.current = null
+  }
+
 
 
 
@@ -2917,6 +3312,9 @@ function App() {
     )
   }
 
+  const projectNameMatchesActive =
+    !!project && project.name.trim().toLowerCase() === projectName.trim().toLowerCase()
+
   return (
     <div className="app">
       <header className="header">
@@ -2963,9 +3361,17 @@ function App() {
           {fileMenuOpen && (
             <div className="file-menu-panel">
               <details className="file-menu-group" open>
+                <summary>Save</summary>
+                <div className="file-menu-group-body">
+                  <button onClick={saveConfigBundle}>Save config</button>
+                  <button onClick={exportBundle}>Save bundle</button>
+                </div>
+              </details>
+              <details className="file-menu-group" open>
                 <summary>Import</summary>
                 <div className="file-menu-group-body">
                   <button onClick={() => openImport('bundle')}>Bundle</button>
+                  <button onClick={() => openImport('config')}>Config</button>
                   <button onClick={() => openImport('mesh')}>Shape (STL/OBJ/PLY)</button>
                   <button onClick={() => openImport('materials')}>Material</button>
                   <button onClick={() => openImport('waveforms')}>Waveform</button>
@@ -2996,7 +3402,7 @@ function App() {
                 ref={importInputRef}
                 className="file-menu-hidden-input"
                 type="file"
-                accept=".json,.sunstone.json,.stl,.obj,.ply"
+                accept=".json,.sunstone.json,.sunstone.config.json,.stl,.obj,.ply"
                 onChange={(e) => {
                   const file = e.currentTarget.files?.[0]
                   if (file) handleImportFile(file)
@@ -3006,23 +3412,6 @@ function App() {
             </div>
           )}
         </div>
-        <button onClick={() => setShowTools((v) => !v)}>{showTools ? 'Hide' : 'Show'} Tools</button>
-        <button onClick={() => setShowProperties((v) => !v)}>{showProperties ? 'Hide' : 'Show'} Properties</button>
-        <button onClick={() => setShowRunPanel((v) => !v)}>{showRunPanel ? 'Hide' : 'Show'} Run</button>
-        <button onClick={() => setCanvasMaximized((v) => !v)}>
-          {canvasMaximized ? 'Restore layout' : 'Maximize canvas'}
-        </button>
-        <button
-          onClick={() => {
-            setShowTools(true)
-            setShowProperties(true)
-            setShowRunPanel(true)
-            setCanvasMaximized(false)
-          }}
-        >
-          Reset layout
-        </button>
-        <button onClick={() => setHelpOpen(true)}>Help</button>
         <div className="settings-menu">
           <button onClick={() => setSettingsOpen((v) => !v)}>Settings ▾</button>
           {settingsOpen && (
@@ -3142,11 +3531,6 @@ function App() {
                 <input type="checkbox" checked={showMarkers} onChange={(e) => setShowMarkers(e.target.checked)} />
                 Show markers
               </label>
-              <div className="settings-title" style={{ marginTop: 8 }}>Debug</div>
-              <label className="check">
-                <input type="checkbox" checked={debugInputs} onChange={(e) => setDebugInputs(e.target.checked)} />
-                Enable input debug logging
-              </label>
               <div className="field">
                 <label>Background</label>
                 <input
@@ -3158,6 +3542,24 @@ function App() {
             </div>
           )}
         </div>
+        <button onClick={() => setHelpOpen(true)}>Help</button>
+        <button onClick={() => setShowTools((v) => !v)}>{showTools ? 'Hide' : 'Show'} Tools</button>
+        <button onClick={() => setShowProperties((v) => !v)}>{showProperties ? 'Hide' : 'Show'} Properties</button>
+        <button onClick={() => setShowRunPanel((v) => !v)}>{showRunPanel ? 'Hide' : 'Show'} Run</button>
+        <button onClick={() => setActionLogOpen((v) => !v)}>{actionLogOpen ? 'Hide' : 'Show'} Action Log</button>
+        <button onClick={() => setCanvasMaximized((v) => !v)}>
+          {canvasMaximized ? 'Restore layout' : 'Maximize canvas'}
+        </button>
+        <button
+          onClick={() => {
+            setShowTools(true)
+            setShowProperties(true)
+            setShowRunPanel(true)
+            setCanvasMaximized(false)
+          }}
+        >
+          Reset layout
+        </button>
       </div>
 
       <main
@@ -3176,14 +3578,20 @@ function App() {
               Name
               <input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
             </label>
-            <button onClick={onCreateProject} disabled={!!busy}>
-              Create
+            <button onClick={projectNameMatchesActive ? exportBundle : onCreateProject} disabled={!!busy}>
+              {projectNameMatchesActive ? 'Save bundle' : 'Create'}
             </button>
           </div>
           <div className="kv">
             <div className="k">Active</div>
             <div className="v mono">{project ? `${project.name} (${project.id})` : '—'}</div>
           </div>
+          {(busy || error) && (
+            <div className="field">
+              {busy && <div className="muted">{busy}</div>}
+              {error && <div className="error">{error}</div>}
+            </div>
+          )}
 
           <h2>Workspace</h2>
           <label>
@@ -3284,18 +3692,6 @@ function App() {
           <div className="row compact">
             <button onClick={() => setZoom((z) => clampRange(z * 1.1, 0.1, 64))}>Zoom in</button>
             <button onClick={() => setZoom((z) => clampRange(z / 1.1, 0.1, 64))}>Zoom out</button>
-            <button
-              onClick={() => {
-                setZoom(1)
-                setViewCenter([0, 0])
-                setSliceZ(0)
-                setIsPanning(false)
-                panStartRef.current = null
-              }}
-            >
-              Reset
-            </button>
-            <button onClick={frameObjects}>Frame objects</button>
           </div>
           <div className="field view-spacing">
             <label>Resolution preview (F1 = hold, F2 = toggle)</label>
@@ -3467,29 +3863,6 @@ function App() {
               </span>
               <span className="muted"> · {workspaceMode.toUpperCase()} · {dimension.toUpperCase()}</span>
             </div>
-            <div className="row compact">
-              <button onClick={captureScene}>Capture PNG</button>
-              <label className="muted">
-                Scale
-                <input
-                  type="number"
-                  min={1}
-                  max={6}
-                  step={1}
-                  value={captureScale}
-                  onChange={(e) => setCaptureScale(Math.max(1, Math.min(6, e.currentTarget.valueAsNumber || 2)))}
-                  style={{ width: 64, marginLeft: 8 }}
-                />
-              </label>
-              {captureDataUrl && (
-                <>
-                  <button onClick={saveCaptureToFile}>Save As…</button>
-                  <a className="button" href={captureDataUrl} download="sunstone-canvas.png">
-                    Download
-                  </a>
-                </>
-              )}
-            </div>
             <div className="muted">
               Click to place. Drag to size insert shapes. Select to edit.{' '}
               {keymap.panMode === 'middle'
@@ -3506,10 +3879,14 @@ function App() {
               className="scene"
               viewBox={safeViewBox}
               tabIndex={0}
-              onFocus={() => setCanvasFocused(true)}
+              onFocus={() => {
+                setCanvasFocused(true)
+                logAction('focus canvas', 'canvas focus')
+              }}
               onBlur={() => {
                 setCanvasFocused(false)
                 setIsSpacePressed(false)
+                logAction('blur canvas', 'canvas blur')
               }}
               onClick={handleCanvasClick}
               onMouseMove={handleCanvasMove}
@@ -3517,12 +3894,10 @@ function App() {
               onWheel={handleCanvasWheel}
               onMouseDown={(e) => {
                 svgRef.current?.focus()
-                if (debugInputs) {
-                  setLastInput(`mouseDown button=${e.button} shift=${e.shiftKey} ctrl=${e.ctrlKey} alt=${e.altKey}`)
-                }
-                if (debugInputs) {
-                  logInput(`mouseDown b=${e.button} shift=${e.shiftKey} ctrl=${e.ctrlKey} alt=${e.altKey}`)
-                }
+                logAction(
+                  `mouseDown b=${e.button} shift=${e.shiftKey} ctrl=${e.ctrlKey} alt=${e.altKey} ${formatMousePosition(e)}`,
+                  `tool ${activeTool}`,
+                )
                 handlePanStart(e)
                 handleDrawStart(e)
                 handleSelectStart(e)
@@ -3530,13 +3905,9 @@ function App() {
                 handleExtrudeStart(e)
               }}
               onMouseUp={(e) => {
-                if (debugInputs) {
-                  setLastInput(`mouseUp button=${e.button}`)
-                }
-                if (debugInputs) {
-                  logInput(`mouseUp b=${e.button}`)
-                }
+                logAction(`mouseUp b=${e.button} ${formatMousePosition(e)}`, `tool ${activeTool}`)
                 if (editDragRef.current) {
+                  logAction(`mouseUp b=${e.button}`, 'edit drag end')
                   const drag = editDragRef.current
                   if (drag.type === 'poly') {
                     setGeometry((prev) =>
@@ -3555,58 +3926,23 @@ function App() {
                         if (nearestIndex < 0) return g
                         const target = g.points[nearestIndex]
                         const nextPoints = g.points.map((p, idx) => (idx === drag.index ? target : p))
-                        const merged = bestDist <= snapDistanceWorld * 0.5
-                          ? nextPoints.filter((_, idx) => idx !== drag.index)
-                          : nextPoints
-                        const nextCenter: [number, number] = [
-                          merged.reduce((acc, p) => acc + p[0], 0) / merged.length,
-                          merged.reduce((acc, p) => acc + p[1], 0) / merged.length,
-                        ]
-                        return { ...g, points: merged, center: nextCenter }
-                      }),
-                    )
-                  }
-                  editDragRef.current = null
-                  editDragPendingRef.current = null
-                  if (editDragFrameRef.current !== null) {
-                    window.cancelAnimationFrame(editDragFrameRef.current)
-                    editDragFrameRef.current = null
-                  }
-                  setIsEditDragging(false)
-                  pushHistory()
-                }
-                handlePanEnd()
-                handleDrawEnd()
-                handleSelectEnd()
-                handleMoveEnd()
-                handleExtrudeEnd()
-              }}
-              onMouseOut={() => {
-                if (debugInputs) {
-                  logInput('mouseOut')
-                }
-                if (editDragRef.current) {
-                  const drag = editDragRef.current
-                  if (drag.type === 'poly') {
-                    setGeometry((prev) =>
-                      prev.map((g) => {
-                        if (g.id !== drag.id || !g.points || drag.index >= g.points.length) return g
-                        let nearestIndex = -1
-                        let bestDist = snapDistanceWorld
-                        g.points.forEach((p, idx) => {
-                          if (idx === drag.index) return
-                          const d = Math.hypot(p[0] - g.points[drag.index][0], p[1] - g.points[drag.index][1])
-                          if (d < bestDist) {
-                            bestDist = d
-                            nearestIndex = idx
-                          }
-                        })
-                        if (nearestIndex < 0) return g
-                        const target = g.points[nearestIndex]
-                        const nextPoints = g.points.map((p, idx) => (idx === drag.index ? target : p))
-                        const merged = bestDist <= snapDistanceWorld * 0.5
-                          ? nextPoints.filter((_, idx) => idx !== drag.index)
-                          : nextPoints
+                        const isClosed =
+                          g.shape === 'polyline' &&
+                          g.points.length > 2 &&
+                          Math.hypot(g.points[0][0] - g.points[g.points.length - 1][0], g.points[0][1] - g.points[g.points.length - 1][1]) <=
+                            snapDistanceWorld
+                        const isEndpointMerge =
+                          isClosed &&
+                          ((drag.index === 0 && nearestIndex === g.points.length - 1) ||
+                            (drag.index === g.points.length - 1 && nearestIndex === 0))
+                        const merged =
+                          bestDist <= snapDistanceWorld * 0.5 && !isEndpointMerge
+                            ? nextPoints.filter((_, idx) => idx !== drag.index)
+                            : nextPoints
+                        if (isEndpointMerge) {
+                          merged[0] = target
+                          merged[merged.length - 1] = target
+                        }
                         const nextCenter: [number, number] = [
                           merged.reduce((acc, p) => acc + p[0], 0) / merged.length,
                           merged.reduce((acc, p) => acc + p[1], 0) / merged.length,
@@ -3683,9 +4019,7 @@ function App() {
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
-                if (debugInputs) {
-                  logInput(`contextMenu shift=${e.shiftKey}`)
-                }
+                logAction(`contextMenu shift=${e.shiftKey} ${formatMousePosition(e)}`, `tool ${activeTool}`)
                 if (activeTool === 'draw') {
                   if (e.detail >= 2) {
                     popLastDrawPoint()
@@ -4229,13 +4563,43 @@ function App() {
                 {activeTool === 'edit' && isSelected(g.id, 'geometry') && g.points?.length && (
                   <g>
                     {g.points.map((p, idx) => (
-                      <circle
-                        key={`edit-${g.id}-${idx}`}
-                        cx={toScene(p[0])}
-                        cy={toScene(p[1])}
-                          r={selectionHandleRadius * 1.3}
-                        fill="rgba(255,255,255,0.95)"
-                        stroke="rgba(37,99,235,0.9)"
+                        <circle
+                          key={`edit-${g.id}-${idx}`}
+                          cx={toScene(p[0])}
+                          cy={toScene(p[1])}
+                          r={
+                            editPointSelection?.id === g.id &&
+                            editPointSelection.kind === 'poly' &&
+                            editPointSelection.index === idx
+                              ? selectionHandleRadius * 1.7
+                              : editPointHover?.id === g.id &&
+                                  editPointHover.kind === 'poly' &&
+                                  editPointHover.index === idx
+                                ? selectionHandleRadius * 1.5
+                                : selectionHandleRadius * 1.3
+                          }
+                        fill={
+                          editPointSelection?.id === g.id &&
+                          editPointSelection.kind === 'poly' &&
+                          editPointSelection.index === idx
+                            ? '#fef08a'
+                            : editPointHover?.id === g.id &&
+                                editPointHover.kind === 'poly' &&
+                                editPointHover.index === idx
+                              ? '#fde047'
+                              : 'rgba(255,255,255,0.95)'
+                        }
+                        stroke={
+                          editPointSelection?.id === g.id &&
+                          editPointSelection.kind === 'poly' &&
+                          editPointSelection.index === idx
+                            ? '#facc15'
+                            : editPointHover?.id === g.id &&
+                                editPointHover.kind === 'poly' &&
+                                editPointHover.index === idx
+                              ? '#fbbf24'
+                              : 'rgba(37,99,235,0.9)'
+                        }
                         strokeWidth={selectionStrokeWidth}
                         vectorEffect="non-scaling-stroke"
                         onMouseDown={(e) => {
@@ -4246,6 +4610,11 @@ function App() {
                             index: idx,
                             points: g.points ?? [],
                           }
+                          setEditPointSelection({ id: g.id, index: idx, kind: 'poly' })
+                          logAction(
+                            `mouseDown b=${e.button} ${formatMousePosition(e)}`,
+                            `edit drag start vertex ${idx}`,
+                          )
                         }}
                       />
                     ))}
@@ -4259,9 +4628,39 @@ function App() {
                           key={`edit-arc-${g.id}-${idx}`}
                           cx={toScene(p[0])}
                           cy={toScene(p[1])}
-                          r={selectionHandleRadius}
-                          fill="rgba(255,255,255,0.95)"
-                          stroke="rgba(14,165,233,0.9)"
+                          r={
+                            editPointSelection?.id === g.id &&
+                            editPointSelection.kind === 'arc' &&
+                            editPointSelection.index === idx
+                              ? selectionHandleRadius * 1.4
+                              : editPointHover?.id === g.id &&
+                                  editPointHover.kind === 'arc' &&
+                                  editPointHover.index === idx
+                                ? selectionHandleRadius * 1.2
+                                : selectionHandleRadius
+                          }
+                          fill={
+                            editPointSelection?.id === g.id &&
+                            editPointSelection.kind === 'arc' &&
+                            editPointSelection.index === idx
+                              ? '#fef08a'
+                              : editPointHover?.id === g.id &&
+                                  editPointHover.kind === 'arc' &&
+                                  editPointHover.index === idx
+                                ? '#fde047'
+                                : 'rgba(255,255,255,0.95)'
+                          }
+                          stroke={
+                            editPointSelection?.id === g.id &&
+                            editPointSelection.kind === 'arc' &&
+                            editPointSelection.index === idx
+                              ? '#facc15'
+                              : editPointHover?.id === g.id &&
+                                  editPointHover.kind === 'arc' &&
+                                  editPointHover.index === idx
+                                ? '#fbbf24'
+                                : 'rgba(14,165,233,0.9)'
+                          }
                           strokeWidth={selectionStrokeWidth}
                           vectorEffect="non-scaling-stroke"
                           onClick={(e) => e.stopPropagation()}
@@ -4274,6 +4673,11 @@ function App() {
                               points: [g.arc.start, g.arc.control ?? g.arc.start, g.arc.end],
                             }
                             setIsEditDragging(true)
+                            setEditPointSelection({ id: g.id, index: idx, kind: 'arc' })
+                            logAction(
+                              `mouseDown b=${e.button} ${formatMousePosition(e)}`,
+                              `edit drag start arc ${idx}`,
+                            )
                           }}
                         />
                       ),
@@ -4334,6 +4738,11 @@ function App() {
                             points: g.points ?? [],
                           }
                           setIsEditDragging(true)
+                          setEditPointSelection({ id: g.id, index: bestIndex, kind: 'poly' })
+                          logAction(
+                            `mouseDown b=${e.button} ${formatMousePosition(e)}`,
+                            `edit drag start vertex ${bestIndex}`,
+                          )
                         }}
                         onContextMenu={(e) => {
                           if (activeTool !== 'edit' || !isSelected(g.id, 'geometry') || !g.points) return
@@ -4426,6 +4835,11 @@ function App() {
                             points: g.points ?? [],
                           }
                           setIsEditDragging(true)
+                          setEditPointSelection({ id: g.id, index: bestIndex, kind: 'poly' })
+                          logAction(
+                            `mouseDown b=${e.button} ${formatMousePosition(e)}`,
+                            `edit drag start vertex ${bestIndex}`,
+                          )
                         }}
                         onContextMenu={(e) => {
                           if (activeTool !== 'edit' || !isSelected(g.id, 'geometry') || !g.points) return
@@ -5463,7 +5877,27 @@ function App() {
               <button onClick={onSubmitRun} disabled={!!busy || !run}>
                 Submit
               </button>
+              <button
+                onClick={onCancelRun}
+                disabled={!!busy || !run || (run.status !== 'submitted' && run.status !== 'running')}
+              >
+                Cancel
+              </button>
             </div>
+            {backend === 'meep' && (
+              <div className="field">
+                <label>Meep Python executable</label>
+                <input
+                  type="text"
+                  placeholder="/path/to/conda/envs/sunstone-meep/bin/python"
+                  value={meepPythonExecutable}
+                  onChange={(e) => setMeepPythonExecutable(e.target.value)}
+                />
+                <div className="muted">
+                  Uses a dedicated Meep environment for the worker.
+                </div>
+              </div>
+            )}
             <div className="kv">
               <div className="k">Run ID</div>
               <div className="v mono">{run?.id ?? '—'}</div>
@@ -5589,25 +6023,58 @@ function App() {
             <div className="muted">
               The CAD editor generates a spec used by the backend. The "dummy" backend outputs synthetic monitor data.
             </div>
-            {debugInputs && (
-              <div className="input-ticker">
-                <div className="ticker-title">Input log</div>
-                {inputLog.length === 0 ? (
-                  <div className="muted">No recent inputs.</div>
-                ) : (
-                  <ul>
-                    {inputLog.map((entry, idx) => (
-                      <li key={`${entry}-${idx}`} className="mono">
-                        {entry}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
           </section>
         )}
       </main>
+
+      {actionLogOpen && (
+        <div
+          className="action-log"
+          style={{
+            left: actionLogPos.x,
+            top: actionLogPos.y,
+            width: actionLogPos.width,
+            height: actionLogPos.height,
+          }}
+        >
+          <div
+            className="action-log-header"
+            onMouseDown={(e) => {
+              actionLogDragRef.current.dragging = true
+              actionLogDragRef.current.offsetX = e.clientX - actionLogPos.x
+              actionLogDragRef.current.offsetY = e.clientY - actionLogPos.y
+            }}
+          >
+            <div className="action-log-title">Action Log</div>
+            <div className="row compact">
+              <button
+                onClick={() => setActionLogEnabled((prev) => !prev)}
+                className={actionLogEnabled ? 'primary' : ''}
+              >
+                {actionLogEnabled ? 'Logging on' : 'Logging off'}
+              </button>
+              <button onClick={copyActionLog}>Copy</button>
+              <button onClick={() => setActionLogEntries([])}>Clear</button>
+              <button onClick={() => setActionLogOpen(false)}>Close</button>
+            </div>
+          </div>
+          <div className="action-log-body">
+            <div className="action-log-list" ref={actionLogListRef}>
+              {actionLogEntries.length === 0 ? (
+                <div className="muted">No actions logged yet.</div>
+              ) : (
+                actionLogEntries.map((entry) => (
+                  <div key={entry.id} className="action-log-row">
+                    <span className="action-log-time mono">{formatActionTimestamp(entry.ts)}</span>
+                    <span className="action-log-input mono">{entry.input}</span>
+                    <span className="action-log-interpreted">{entry.interpreted ?? '—'}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {helpOpen && (
         <div className="help-overlay" onClick={() => setHelpOpen(false)}>
@@ -5626,14 +6093,8 @@ function App() {
               <button className={helpTab === 'docs' ? 'primary' : ''} onClick={() => setHelpTab('docs')}>
                 Docs
               </button>
-              <button className={helpTab === 'readme' ? 'primary' : ''} onClick={() => setHelpTab('readme')}>
-                ReadMe
-              </button>
               <button className={helpTab === 'keymap' ? 'primary' : ''} onClick={() => setHelpTab('keymap')}>
                 Key map
-              </button>
-              <button className={helpTab === 'spec' ? 'primary' : ''} onClick={() => setHelpTab('spec')}>
-                Software spec
               </button>
             </div>
 
@@ -5646,15 +6107,8 @@ function App() {
                   <div className="v mono">{apiBaseUrl}</div>
                 </div>
                 <div className="field">
-                  <label>View software spec preview</label>
-                  <button
-                    onClick={() => {
-                      setHelpTab('spec')
-                      specRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    }}
-                  >
-                    Open spec view
-                  </button>
+                  <label>Software spec (JSON preview)</label>
+                  <pre className="help-pre">{specText}</pre>
                 </div>
               </div>
             )}
@@ -5667,18 +6121,21 @@ function App() {
                   </a>
                 </div>
                 <div className="field">
+                  <button onClick={() => loadReadme('/docs/foss-optics-fdtd-spec.md')}>
+                    Load SunStone software spec
+                  </button>
+                </div>
+                <div className="field">
+                  <button onClick={() => loadReadme('/docs/project_bundle.md')}>Load project bundle format</button>
+                </div>
+                <div className="field">
                   <button onClick={() => loadReadme('/README.md')}>Load workspace README</button>
                 </div>
                 <div className="field">
                   <button onClick={() => loadReadme('/frontend/README.md')}>Load frontend README</button>
                 </div>
                 {readmeError && <div className="muted">{readmeError}</div>}
-              </div>
-            )}
-
-            {helpTab === 'readme' && (
-              <div className="help-body">
-                {readmeContent ? <pre className="help-pre">{readmeContent}</pre> : <div className="muted">—</div>}
+                {readmeContent && <pre className="help-pre">{readmeContent}</pre>}
               </div>
             )}
 
@@ -5698,7 +6155,7 @@ function App() {
                           }))
                         }
                       >
-                        <option value="middle">Middle mouse drag (AutoCAD)</option>
+                        <option value="middle">Middle mouse drag</option>
                         <option value="space">Space + drag</option>
                         <option value="shift">Shift + drag</option>
                       </select>
@@ -5796,6 +6253,41 @@ function App() {
                           </div>
                         </td>
                       </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="keymap-block">
+                  <div className="keymap-title">View & preview</div>
+                  <table className="keymap-table">
+                    <thead>
+                      <tr>
+                        <th>Action</th>
+                        <th>Binding</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {([
+                        { key: 'cycleTool', label: 'Cycle tools (Shift to reverse)' },
+                        { key: 'rasterHold', label: 'Hold raster preview' },
+                        { key: 'rasterToggle', label: 'Toggle raster preview' },
+                        { key: 'viewReset', label: 'Reset view' },
+                        { key: 'viewFrame', label: 'Frame objects' },
+                      ] as Array<{ key: keyof KeymapConfig; label: string }>).map((row) => (
+                        <tr key={row.key}>
+                          <td>{row.label}</td>
+                          <td>
+                            <input
+                              value={keymap[row.key]}
+                              onKeyDown={(e) => {
+                                e.preventDefault()
+                                updateKeymapField(row.key, comboFromEvent(e.nativeEvent))
+                              }}
+                              onChange={(e) => updateKeymapField(row.key, e.target.value)}
+                            />
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -5943,7 +6435,7 @@ function App() {
                 </div>
 
                 <div className="keymap-block">
-                  <div className="keymap-title">Fixed shortcuts</div>
+                  <div className="keymap-title">Non-configurable shortcuts</div>
                   <table className="keymap-table">
                     <thead>
                       <tr>
@@ -5952,18 +6444,6 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr>
-                        <td>Tab / Shift+Tab</td>
-                        <td>Cycle tools (Select → Edit → Insert → Draw → Measure → Extrude)</td>
-                      </tr>
-                      <tr>
-                        <td>F1 (hold)</td>
-                        <td>Show raster resolution preview</td>
-                      </tr>
-                      <tr>
-                        <td>F2</td>
-                        <td>Toggle raster resolution preview</td>
-                      </tr>
                       <tr>
                         <td>Ctrl (hold)</td>
                         <td>Disable snapping while drawing or inserting points</td>
@@ -6101,12 +6581,6 @@ function App() {
               </div>
             )}
 
-
-            {helpTab === 'spec' && (
-              <div className="help-body">
-                <pre className="help-pre">{specText}</pre>
-              </div>
-            )}
           </div>
         </div>
       )}

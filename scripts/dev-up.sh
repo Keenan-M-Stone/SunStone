@@ -7,6 +7,15 @@ DEV_DIR="$DATA_DIR/dev"
 PID_DIR="$DEV_DIR/pids"
 LOG_DIR="$DEV_DIR/logs"
 
+OSRELEASE=""
+if [[ -r /proc/sys/kernel/osrelease ]]; then
+  OSRELEASE="$(cat /proc/sys/kernel/osrelease)"
+fi
+IS_WSL=0
+if echo "$OSRELEASE" | grep -qiE "microsoft|wsl"; then
+  IS_WSL=1
+fi
+
 BACKEND_PID_FILE="$PID_DIR/backend.pid"
 FRONTEND_PID_FILE="$PID_DIR/frontend.pid"
 FRONTEND_PORT_FILE="$DEV_DIR/frontend.port"
@@ -30,10 +39,26 @@ open_url() {
     return 0
   fi
 
+  if [[ "$IS_WSL" == "1" ]]; then
+    if command -v cmd.exe >/dev/null 2>&1; then
+      cmd.exe /c start "" "$url" >/dev/null 2>&1 &
+      return 0
+    fi
+  fi
+
+  if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" && "$(uname -s)" != "Darwin" ]]; then
+    echo "No GUI session detected. Open this URL manually: $url"
+    return 0
+  fi
+
   if command -v xdg-open >/dev/null 2>&1; then
     nohup xdg-open "$url" >/dev/null 2>&1 &
   elif command -v open >/dev/null 2>&1; then
     nohup open "$url" >/dev/null 2>&1 &
+  elif command -v python3 >/dev/null 2>&1; then
+    nohup python3 -m webbrowser "$url" >/dev/null 2>&1 &
+  else
+    echo "No browser opener found. Open this URL manually: $url"
   fi
 }
 
@@ -45,7 +70,6 @@ find_listener_pid() {
     echo ""
     return 0
   fi
-
   # Try to extract pid=1234 from ss output.
   echo "$line" | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | head -n 1
 }
@@ -93,12 +117,15 @@ start_backend() {
       return 0
     fi
 
-    echo "Port 8000 is already in use by pid $listener_pid; refusing to start backend." >&2
+    echo "Port 8000 is already in use by pid $listener_pid; backend not started." >&2
     echo "Run ./scripts/dev-down.sh or stop pid $listener_pid, then retry." >&2
-    exit 1
+    return 1
   fi
 
-  require_cmd conda
+  if ! command -v conda >/dev/null 2>&1; then
+    echo "Missing required command: conda" >&2
+    return 1
+  fi
 
   # Activate conda env in this shell so we get a real uvicorn pid.
   # shellcheck disable=SC1090
@@ -113,12 +140,17 @@ start_backend() {
   python -c "import sunstone_backend" >/dev/null 2>&1 || {
     echo "Backend package not installed in env 'sunstone'." >&2
     echo "Run: cd $ROOT_DIR/backend && pip install -e ." >&2
-    exit 1
+    return 1
   }
+
+  local backend_host="127.0.0.1"
+  if [[ "$IS_WSL" == "1" ]]; then
+    backend_host="0.0.0.0"
+  fi
 
   nohup uvicorn sunstone_backend.api.app:create_app \
     --factory \
-    --host 127.0.0.1 \
+    --host "$backend_host" \
     --port 8000 \
     >"$BACKEND_LOG" 2>&1 &
 
@@ -140,6 +172,12 @@ start_frontend() {
   require_cmd npm
 
   cd "$ROOT_DIR/frontend"
+
+  if [[ "$IS_WSL" == "1" ]]; then
+    export VITE_API_BASE_URL="http://localhost:8000"
+  else
+    export VITE_API_BASE_URL="http://127.0.0.1:8000"
+  fi
 
   if [[ ! -d node_modules ]]; then
     echo "Installing frontend deps (node_modules missing)…"
@@ -163,8 +201,14 @@ start_frontend() {
   done
 }
 
-start_backend
-start_frontend
+backend_ok=1
+if ! start_backend; then
+  backend_ok=0
+fi
+frontend_ok=1
+if ! start_frontend; then
+  frontend_ok=0
+fi
 
 FRONTEND_PORT="5173"
 if [[ -f "$FRONTEND_PORT_FILE" ]]; then
@@ -172,7 +216,15 @@ if [[ -f "$FRONTEND_PORT_FILE" ]]; then
 fi
 
 echo "UI:      http://127.0.0.1:${FRONTEND_PORT}"
-echo "API:     http://127.0.0.1:8000"
-echo "API docs http://127.0.0.1:8000/docs"
+if [[ "$backend_ok" == "1" ]]; then
+  echo "API:     http://127.0.0.1:8000"
+  echo "API docs http://127.0.0.1:8000/docs"
+else
+  echo "API:     (not running)"
+fi
 
-open_url "http://127.0.0.1:${FRONTEND_PORT}"
+if [[ "$frontend_ok" == "1" ]]; then
+  open_url "http://127.0.0.1:${FRONTEND_PORT}"
+else
+  echo "Frontend may not be running. Open this URL manually: http://127.0.0.1:${FRONTEND_PORT}"
+fi

@@ -32,10 +32,20 @@ export async function createRun(projectId: string, spec: unknown): Promise<RunRe
   })
 }
 
-export async function submitRun(runId: string, backend: string): Promise<void> {
+export async function submitRun(runId: string, backend: string, pythonExecutable?: string): Promise<void> {
   await http(`/runs/${encodeURIComponent(runId)}/submit`, {
     method: 'POST',
-    body: JSON.stringify({ mode: 'local', backend }),
+    body: JSON.stringify({
+      mode: 'local',
+      backend,
+      python_executable: pythonExecutable || undefined,
+    }),
+  })
+}
+
+export async function cancelRun(runId: string): Promise<void> {
+  await http(`/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: 'POST',
   })
 }
 

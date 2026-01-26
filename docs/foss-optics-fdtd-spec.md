@@ -198,6 +198,11 @@ Example sketch:
 - Run with MPI.
 - Write standardized outputs.
 
+Interpreter selection:
+- The submit request may include a `python_executable` path so the worker runs in a dedicated Meep
+  environment (separate from the control plane). The UI exposes this in the Run panel when the backend
+  is set to `meep`.
+
 ### 4.2 Geometry ingestion strategy (v0 → v1)
 FDTD wants a material assignment on a grid.
 - v0: support primitives (box/sphere/cylinder), plus STL via voxelization.

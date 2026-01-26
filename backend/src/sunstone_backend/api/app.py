@@ -17,6 +17,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"] ,
         allow_headers=["*"],
+        allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     )
 
     app.include_router(projects.router)
