@@ -21,6 +21,9 @@ class MeepBackend(Backend):
     name = "meep"
 
     def run(self, run_dir: Path) -> None:
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger("meep_backend")
         try:
             import meep as mp
             import numpy as np
@@ -39,6 +42,11 @@ class MeepBackend(Backend):
         dimension = domain.get("dimension", "2d")
         dim = 2 if str(dimension).lower().startswith("2") else 3
         cell_size = list(domain.get("cell_size", [1.0, 1.0, 0.0]))
+        logger.info(f"[MeepBackend] Received cell_size: {cell_size} (dim={dim})")
+        if any(s is None or float(s) <= 0 for s in cell_size[:dim]):
+            msg = f"Invalid cell size for Meep: {cell_size}. All spatial dimensions must be > 0."
+            logger.error(f"[MeepBackend] {msg}")
+            raise RuntimeError(msg)
         # For 2D, ensure z is 0, but warn if x or y is 0
         if dim == 2:
             if cell_size[0] == 0 or cell_size[1] == 0:
@@ -163,7 +171,9 @@ class MeepBackend(Backend):
                         row = {"t": t}
                         for comp in item["components"]:
                             field = getattr(mp, comp)
-                            row[comp] = float(sim.get_field_point(field, mp.Vector3(*item["position"])))
+                            val = sim.get_field_point(field, mp.Vector3(*item["position"]))
+                            # Handle complex values: store real part only
+                            row[comp] = float(val.real) if hasattr(val, 'real') else float(val)
                         monitor_samples[item["id"]].append(row)
 
                 return _cb

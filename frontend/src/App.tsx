@@ -9,6 +9,12 @@ import * as THREE from 'three'
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { getResourceUsage } from './resourceApi'
 
+// Utility: log resource polling
+function logResource(msg: string, ...args: any[]) {
+  // eslint-disable-next-line no-console
+  console.log('[ResourceMonitor]', msg, ...args)
+}
+
 import { apiBaseUrl } from './config'
 import {
   createProject,
@@ -1648,14 +1654,22 @@ function App() {
 
   const specText = useMemo(() => JSON.stringify(spec, null, 2), [spec])
 
+  // Resource polling error overlay
+  const [resourceError, setResourceError] = useState<string | null>(null)
+
   useEffect(() => {
     if (!run) return
     const t = window.setInterval(async () => {
       try {
         const r = await getRun(run.id)
         setRun(r)
-      } catch {
-        // ignore
+        // Try resource polling
+        const usage = await getResourceUsage(run.id)
+        logResource('Polled resource usage:', usage)
+        setResourceError(null)
+      } catch (e: any) {
+        logResource('Resource polling error:', e)
+        setResourceError(e?.message || String(e))
       }
     }, 800)
     return () => window.clearInterval(t)
@@ -1710,6 +1724,15 @@ function App() {
     if (!run) {
       setError('Create a run first.')
       return
+    }
+    // If Meep 2D, validate cell and geometry sizes before submitting
+    if (backend === 'meep' && dimension === '2d') {
+      const compatMsg = validateMeep2D(cellSize, geometry)
+      if (compatMsg) {
+        setMeepCompatWarning(compatMsg)
+        setShowMeepCompatPrompt(true)
+        return
+      }
     }
     setBusy('Submitting run…')
     try {
@@ -3358,6 +3381,11 @@ function App() {
 
   return (
     <div className="app">
+      {resourceError && (
+        <div style={{position:'fixed',top:0,left:0,right:0,zIndex:2000,background:'#b00',color:'#fff',padding:12}}>
+          <b>Resource Monitor Error:</b> {resourceError}
+        </div>
+      )}
       <header className="header">
         <div>
           <div className="title">SunStone</div>
@@ -3620,8 +3648,8 @@ function App() {
               Name
               <input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
             </label>
-            <button onClick={projectNameMatchesActive ? exportBundle : onCreateProject} disabled={!!busy}>
-              {projectNameMatchesActive ? 'Save bundle' : 'Create'}
+            <button onClick={onCreateProject} disabled={!!busy}>
+              Create
             </button>
           </div>
           <div className="kv">
@@ -5906,6 +5934,7 @@ function App() {
           <RunPanel
             run={run}
             backend={backend}
+            setBackend={setBackend}
             busy={busy}
             error={error}
             project={project}

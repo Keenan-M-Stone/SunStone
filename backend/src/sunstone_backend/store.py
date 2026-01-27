@@ -1,4 +1,18 @@
+
 from __future__ import annotations
+import logging
+def get_logger(data_dir: Path):
+    log_dir = data_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "backend.log"
+    logger = logging.getLogger("sunstone_backend")
+    if not logger.hasHandlers():
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+    return logger
 
 import json
 import uuid
@@ -13,6 +27,8 @@ class RunStore:
         self.data_dir = data_dir
         self.projects_dir = self.data_dir / "projects"
         self.runs_dir = self.data_dir / "runs"
+        self.logger = get_logger(self.data_dir)
+        self.logger.info(f"RunStore initialized with data_dir: {self.data_dir}")
 
     def ensure(self) -> None:
         self.projects_dir.mkdir(parents=True, exist_ok=True)
@@ -72,6 +88,8 @@ class RunStore:
 
         status = StatusFile(status="created", updated_at=utc_now_iso())
         (run_dir / "runtime" / "status.json").write_text(status.model_dump_json(indent=2))
+
+        self.logger.info(f"Created run {run_id} for project {project_id} at {run_dir}")
 
         return rec
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from ..settings import get_settings
+from sunstone_backend.settings import get_settings
 from .routes import artifacts, projects, runs
 
 
@@ -20,9 +20,11 @@ def create_app() -> FastAPI:
         allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     )
 
+    from .routes import logs
     app.include_router(projects.router)
     app.include_router(runs.router)
     app.include_router(artifacts.router)
+    app.include_router(logs.router)
 
     @app.get("/health")
     def health() -> dict:
