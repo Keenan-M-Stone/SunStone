@@ -1,19 +1,6 @@
-// Utility: validate cell and geometry sizes for Meep compatibility
-function validateMeep2D(cellSize: [number, number, number], geometry: GeometryItem[]): string | null {
-  if (cellSize.length < 2 || cellSize[0] <= 0 || cellSize[1] <= 0) {
-    return 'Cell size x and y must be > 0 for Meep 2D.';
-  }
-  for (const g of geometry) {
-    if ((g.size && (g.size[0] <= 0 || g.size[1] <= 0)) || (g.shape === 'cylinder' && g.size && g.size[0] <= 0)) {
-      return `Geometry item ${g.id} has invalid size for Meep 2D.`;
-    }
-  }
-  return null;
-}
-  // State for backend compatibility warning
-  const [meepCompatWarning, setMeepCompatWarning] = useState<string | null>(null);
-  const [showMeepCompatPrompt, setShowMeepCompatPrompt] = useState(false);
+
 import Dashboard from './Dashboard'
+import RunPanel from './RunPanel'
 
 import './App.css'
 import type { CSSProperties, MouseEvent, WheelEvent } from 'react'
@@ -34,6 +21,19 @@ import {
   submitRun,
 } from './sunstoneApi'
 import type { ArtifactEntry, ProjectRecord, RunRecord } from './types'
+
+// Utility: validate cell and geometry sizes for Meep compatibility
+function validateMeep2D(cellSize: [number, number, number], geometry: GeometryItem[]): string | null {
+  if (cellSize.length < 2 || cellSize[0] <= 0 || cellSize[1] <= 0) {
+    return 'Cell size x and y must be > 0 for Meep 2D.';
+  }
+  for (const g of geometry) {
+    if ((g.size && (g.size[0] <= 0 || g.size[1] <= 0)) || (g.shape === 'cylinder' && g.size && g.size[0] <= 0)) {
+      return `Geometry item ${g.id} has invalid size for Meep 2D.`;
+    }
+  }
+  return null;
+}
 
 type MaterialDef = {
   id: string
@@ -478,16 +478,8 @@ function App() {
   const [pml, setPml] = useState<[number, number, number]>(DEFAULT_PML)
   const [materials, setMaterials] = useState<MaterialDef[]>(INITIAL_MATERIALS)
   const [backgroundColor, setBackgroundColor] = useState('#0b1220')
-    // Validate Meep 2D compatibility before submitting
-    if (backend === 'meep' && dimension === '2d') {
-      const warn = validateMeep2D(cellSize, geometry);
-      if (warn) {
-        setMeepCompatWarning(warn);
-        setShowMeepCompatPrompt(true);
-        return;
-      }
-    }
-    // ...existing code...
+  const [meepCompatWarning, setMeepCompatWarning] = useState<string | null>(null);
+  const [showMeepCompatPrompt, setShowMeepCompatPrompt] = useState(false);
   // Handler to auto-fix for Meep 2D
   function autoFixMeep2D() {
     setCellSize(([x, y, z]) => [Math.max(x, 1e-9), Math.max(y, 1e-9), 0]);
@@ -3461,10 +3453,11 @@ function App() {
             </div>
           )}
         </div>
-        <div className="settings-menu">
+        <div className="settings-menu" style={{ position: 'relative' }}>
           <button onClick={() => setSettingsOpen((v) => !v)}>Settings ▾</button>
           {settingsOpen && (
-            <div className="settings-panel">
+            <div className="settings-panel" style={{ left: 0, right: 'auto' }}>
+              {/* ...settings panel content... */}
               <div className="settings-title">Display</div>
               <label>
                 Units
@@ -5910,132 +5903,45 @@ function App() {
         )}
 
         {showRunPanel && !canvasMaximized && (
-          <section className="panel run">
-            <h2>Resource Monitor</h2>
-            <div style={{ minHeight: 220, marginBottom: 8 }}>
-              <Dashboard runId={run?.id ?? null} />
-            </div>
-            <hr />
-            <div className="row" style={{ marginBottom: 12 }}>
-              <button onClick={onCreateRun} disabled={!!busy || !project}>Create run</button>
-              <label>
-                Backend
-                <select value={backend} onChange={(e) => setBackend(e.target.value)}>
-                  <option value="dummy">dummy</option>
-                  <option value="meep">meep</option>
-                </select>
-              </label>
-              <button onClick={onSubmitRun} disabled={!!busy || !run}>Submit</button>
-              <button
-                onClick={onCancelRun}
-                disabled={!!busy || !run || (run.status !== 'submitted' && run.status !== 'running')}
-              >
-                Cancel
-              </button>
-            </div>
-            {backend === 'meep' && (
-              <div className="field">
-                <label>Meep Python executable</label>
-                <input
-                  type="text"
-                  placeholder="/path/to/conda/envs/sunstone-meep/bin/python"
-                  value={meepPythonExecutable}
-                  onChange={(e) => setMeepPythonExecutable(e.target.value)}
-                />
-                <div className="muted">Uses a dedicated Meep environment for the worker.</div>
-              </div>
-            )}
-            <div className="kv">
-              <div className="k">Run ID</div>
-              <div className="v mono">{run?.id ?? '—'}</div>
-              <div className="k">Status</div>
-              <div className="v mono">{run?.status ?? '—'}</div>
-            </div>
-            <hr />
-            <h2>Run Settings</h2>
-            <div className="row two-cols">
-              <div className="field">
-                <label>Preview component</label>
-                <select value={previewComponent} onChange={(e) => setPreviewComponent(e.target.value as any)}>
-                  {(['Ex', 'Ey', 'Ez', 'Hx', 'Hy', 'Hz'] as const).map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Preview palette</label>
-                <select value={previewPalette} onChange={(e) => setPreviewPalette(e.target.value as any)}>
-                  <option value="viridis">viridis</option>
-                  <option value="jet">jet</option>
-                  <option value="gray">gray</option>
-                </select>
-              </div>
-            </div>
-            <div className="row three-cols">
-              <div className="field">
-                <label>Snapshot stride</label>
-                <input type="number" min={1} step={1} value={snapshotStride} onChange={(e) => setSnapshotStride(Math.max(1, e.currentTarget.valueAsNumber || 1))} />
-              </div>
-              <div className="field">
-                <label>Movie dt (s)</label>
-                <input type="number" step="1e-15" value={movieDt} onChange={(e) => setMovieDt(Math.max(1e-18, e.currentTarget.valueAsNumber || movieDt))} />
-              </div>
-              <div className="field">
-                <label>Movie start (s)</label>
-                <input type="number" step="1e-15" value={movieStart} onChange={(e) => setMovieStart(e.currentTarget.valueAsNumber || 0)} />
-              </div>
-              <div className="field">
-                <label>Movie stop (s)</label>
-                <input type="number" step="1e-15" value={movieStop} onChange={(e) => setMovieStop(e.currentTarget.valueAsNumber || movieStop)} />
-              </div>
-              <div className="field">
-                <label>Movie stride</label>
-                <input type="number" min={1} step={1} value={movieStride} onChange={(e) => setMovieStride(Math.max(1, e.currentTarget.valueAsNumber || 1))} />
-              </div>
-              <div className="field">
-                <label>Max frames</label>
-                <input type="number" min={10} step={1} value={movieMaxFrames} onChange={(e) => setMovieMaxFrames(Math.max(10, e.currentTarget.valueAsNumber || movieMaxFrames))} />
-              </div>
-            </div>
-            <div className="row">
-              <label className="check">
-                <input type="checkbox" checked={snapshotEnabled} onChange={(e) => setSnapshotEnabled(e.target.checked)} />
-                Enable snapshots
-              </label>
-              <label className="check">
-                <input type="checkbox" checked={livePreview} onChange={(e) => setLivePreview(e.target.checked)} />
-                Live preview on canvas
-              </label>
-            </div>
-            <hr />
-            <h2>Spec (Preview)</h2>
-            <textarea ref={specRef} className="spec" value={specText} readOnly />
-            <hr />
-            <h2>Logs</h2>
-            <div className="row">
-              <button onClick={onRefreshLogs} disabled={!!busy || !run}>Refresh</button>
-            </div>
-            <pre className="logs">{logs || '—'}</pre>
-            <hr />
-            <h2>Artifacts</h2>
-            <div className="row">
-              <button onClick={onRefreshArtifacts} disabled={!!busy || !run}>Refresh</button>
-            </div>
-            <div className="artifacts">
-              {artifacts.length === 0 ? (
-                <div className="muted">—</div>
-              ) : (
-                artifacts.map((a) => (
-                  <div key={a.path} className="artifact">
-                    <a className="mono" href={run ? downloadArtifactUrl(run.id, a.path) : '#'} target="_blank" rel="noreferrer">{a.path}</a>
-                    <span className="muted">{(a.size_bytes / 1024).toFixed(1)} KiB</span>
-                  </div>
-                ))
-              )}
-            </div>
-            {busy && <div className="muted">{busy}</div>}
-            {error && <div className="error">{error}</div>}
-          </section>
+          <RunPanel
+            run={run}
+            backend={backend}
+            busy={busy}
+            error={error}
+            project={project}
+            onCreateRun={onCreateRun}
+            onSubmitRun={onSubmitRun}
+            onCancelRun={onCancelRun}
+            meepPythonExecutable={meepPythonExecutable}
+            setMeepPythonExecutable={setMeepPythonExecutable}
+            previewComponent={previewComponent}
+            setPreviewComponent={setPreviewComponent}
+            previewPalette={previewPalette}
+            setPreviewPalette={setPreviewPalette}
+            snapshotEnabled={snapshotEnabled}
+            setSnapshotEnabled={setSnapshotEnabled}
+            livePreview={livePreview}
+            setLivePreview={setLivePreview}
+            snapshotStride={snapshotStride}
+            setSnapshotStride={setSnapshotStride}
+            movieDt={movieDt}
+            setMovieDt={setMovieDt}
+            movieStart={movieStart}
+            setMovieStart={setMovieStart}
+            movieStop={movieStop}
+            setMovieStop={setMovieStop}
+            movieStride={movieStride}
+            setMovieStride={setMovieStride}
+            movieMaxFrames={movieMaxFrames}
+            setMovieMaxFrames={setMovieMaxFrames}
+            specText={specText}
+            specRef={specRef}
+            logs={logs}
+            onRefreshLogs={onRefreshLogs}
+            artifacts={artifacts}
+            onRefreshArtifacts={onRefreshArtifacts}
+            downloadArtifactUrl={downloadArtifactUrl}
+          />
         )}
       </main>
 

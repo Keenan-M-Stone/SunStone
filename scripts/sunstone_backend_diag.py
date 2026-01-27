@@ -1,3 +1,4 @@
+
 import requests
 import sys
 
@@ -16,12 +17,42 @@ def check_api():
         return False
     return True
 
-def check_resource(run_id='test'):
+def create_project():
+    try:
+        r = requests.post(f'{API_BASE}/projects', json={"name": "diag-proj"})
+        if r.status_code == 200:
+            print('✅ Project created')
+            return r.json()['id']
+        else:
+            print(f'❌ Project creation error: {r.status_code}')
+            return None
+    except Exception as e:
+        print(f'❌ Project creation failed: {e}')
+        return None
+
+def create_run(project_id):
+    try:
+        r = requests.post(f'{API_BASE}/projects/{project_id}/runs', json={"spec": {}})
+        if r.status_code == 200:
+            print('✅ Run created')
+            return r.json()['id']
+        else:
+            print(f'❌ Run creation error: {r.status_code}')
+            return None
+    except Exception as e:
+        print(f'❌ Run creation failed: {e}')
+        return None
+
+
+def check_resource(run_id):
     try:
         r = requests.get(f'{API_BASE}/runs/{run_id}/resource')
         if r.status_code == 200:
             print('✅ Resource endpoint reachable')
             print('Response:', r.json())
+        elif r.status_code == 404:
+            print('⚠️  Resource not found (expected for new runs)')
+            return True
         else:
             print(f'❌ Resource endpoint error: {r.status_code}')
             return False
@@ -32,7 +63,15 @@ def check_resource(run_id='test'):
 
 def main():
     ok = check_api()
-    ok = check_resource() and ok
+    project_id = create_project()
+    if not project_id:
+        print('Some backend diagnostics failed.')
+        sys.exit(1)
+    run_id = create_run(project_id)
+    if not run_id:
+        print('Some backend diagnostics failed.')
+        sys.exit(1)
+    ok = check_resource(run_id) and ok
     if ok:
         print('All backend diagnostics passed.')
     else:

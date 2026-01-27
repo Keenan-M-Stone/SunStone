@@ -16,7 +16,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ runId }) => {
   const [resourceData, setResourceData] = useState<ResourceDatum[]>([]);
-  const resourceTimer = useRef<NodeJS.Timeout | null>(null);
+  const resourceTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (!runId) {
@@ -48,9 +48,9 @@ const Dashboard: React.FC<DashboardProps> = ({ runId }) => {
           <div style={{ width: '100%', height: 200 }}>
             <ResponsiveContainer>
               <LineChart data={resourceData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                <XAxis dataKey="timestamp" tickFormatter={t => new Date(t * 1000).toLocaleTimeString()} />
-                <YAxis yAxisId="left" domain={[0, 100]} tickFormatter={v => `${v}%`} />
-                <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${(v / 1e6).toFixed(0)} MB`} />
+                <XAxis dataKey="timestamp" tickFormatter={(t: number) => new Date(t * 1000).toLocaleTimeString()} />
+                <YAxis yAxisId="left" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
+                <YAxis yAxisId="right" orientation="right" tickFormatter={(v: number) => `${(v / 1e6).toFixed(0)} MB`} />
                 <Tooltip formatter={(v, n) => n && n.toString().includes('memory') ? `${(v as number / 1e6).toFixed(1)} MB` : `${v}%`} />
                 <Legend />
                 <Line yAxisId="left" type="monotone" dataKey="cpu_percent" stroke="#8884d8" name="CPU %" dot={false} />
