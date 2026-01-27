@@ -74,15 +74,27 @@ def submit_run(
     store.save_run(run)
     store.save_status(run_id, StatusFile(status="submitted", updated_at=utc_now_iso()))
 
-    # Launch worker
-    runner = LocalJobRunner()
-    job = runner.submit(
-        run=run,
-        run_dir=run_dir,
-        backend=backend,
-        python_executable=req.python_executable,
-    )
-    (run_dir / "runtime" / "job.json").write_text(job.model_dump_json(indent=2))
+    # Launch worker with error handling
+    try:
+        runner = LocalJobRunner()
+        job = runner.submit(
+            run=run,
+            run_dir=run_dir,
+            backend=backend,
+            python_executable=req.python_executable,
+        )
+        (run_dir / "runtime" / "job.json").write_text(job.model_dump_json(indent=2))
+    except Exception as e:
+        # Log error to stderr.log
+        log_path = run_dir / "logs" / "stderr.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a") as f:
+            f.write(f"[submit_run] Worker launch failed: {e}\n")
+        # Set status to failed with detail
+        run.status = "failed"
+        store.save_run(run)
+        store.save_status(run_id, StatusFile(status="failed", updated_at=utc_now_iso(), detail=f"Worker launch failed: {e}"))
+        raise HTTPException(status_code=500, detail=f"Worker launch failed: {e}")
 
     return SubmitRunResponse(run_id=run_id, status=run.status)
 
