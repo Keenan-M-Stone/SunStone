@@ -39,8 +39,13 @@ class MeepBackend(Backend):
         dimension = domain.get("dimension", "2d")
         dim = 2 if str(dimension).lower().startswith("2") else 3
         cell_size = list(domain.get("cell_size", [1.0, 1.0, 0.0]))
+        # For 2D, ensure z is 0, but warn if x or y is 0
         if dim == 2:
+            if cell_size[0] == 0 or cell_size[1] == 0:
+                raise RuntimeError(f"Invalid 2D cell size: {cell_size}. x and y must be > 0 for Meep 2D.")
             cell_size = [cell_size[0], cell_size[1], 0.0]
+        if any(s == 0 for s in cell_size[:dim]):
+            raise RuntimeError(f"Invalid cell size: {cell_size}. All spatial dimensions must be > 0.")
         cell = mp.Vector3(*cell_size)
 
         bc = spec.get("boundary_conditions", {})
@@ -71,7 +76,11 @@ class MeepBackend(Backend):
             if gtype == "block":
                 size = list(geom.get("size", [0.0, 0.0, 0.0]))
                 if dim == 2:
+                    if size[0] == 0 or size[1] == 0:
+                        raise RuntimeError(f"Invalid 2D block size: {size}. x and y must be > 0 for Meep 2D.")
                     size = [size[0], size[1], mp.inf]
+                if any(s == 0 for s in size[:dim]):
+                    raise RuntimeError(f"Invalid block size: {size}. All spatial dimensions must be > 0.")
                 geometry.append(
                     mp.Block(
                         size=mp.Vector3(*size),
@@ -84,6 +93,8 @@ class MeepBackend(Backend):
                 height = float(geom.get("height", 0.0))
                 if dim == 2:
                     height = mp.inf
+                if radius == 0:
+                    raise RuntimeError(f"Invalid cylinder radius: {radius}. Must be > 0.")
                 geometry.append(
                     mp.Cylinder(
                         radius=radius,

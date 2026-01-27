@@ -26,7 +26,21 @@ class LocalJobRunner:
         stdout_path = logs_dir / "stdout.log"
         stderr_path = logs_dir / "stderr.log"
 
-        py = python_executable or sys.executable
+        py = (python_executable.strip() if python_executable else sys.executable)
+        py_path = Path(py)
+        # If a directory is passed, try to resolve to the python executable
+        if py_path.is_dir():
+            # Try common locations for conda/venv
+            candidates = [py_path / "bin" / "python", py_path / "Scripts" / "python.exe"]
+            py_exec = None
+            for candidate in candidates:
+                if candidate.exists() and candidate.is_file():
+                    py_exec = str(candidate)
+                    break
+            if not py_exec:
+                raise RuntimeError(f"Could not find python executable in {py_path}")
+            py = py_exec
+
         cmd = [
             py,
             "-m",

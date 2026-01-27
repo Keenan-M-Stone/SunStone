@@ -1,13 +1,34 @@
+
 from __future__ import annotations
+from ...settings import Settings, get_settings
+
+from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException
+
+router = APIRouter(tags=["runs"])
+
+@router.get("/runs/{run_id}/resource")
+def get_resource(run_id: str, settings: Settings = Depends(get_settings)):
+    store = _store(settings)
+    run_dir = store.run_dir(run_id)
+    resource_path = run_dir / "runtime" / "resource.json"
+    if not resource_path.exists():
+        return JSONResponse(content=[])
+    try:
+        with open(resource_path) as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+    except Exception:
+        return JSONResponse(content=[])
+
 
 import json
-
-from fastapi import APIRouter, Depends, HTTPException
 
 from ...hardware import detect_environment
 from ...jobs import LocalJobRunner
 from ...models.api import CreateRunRequest, SubmitRunRequest, SubmitRunResponse
 from ...models.run import JobFile, RunRecord, StatusFile
+
 from ...settings import Settings, get_settings
 from ...store import RunStore
 from ...util.time import utc_now_iso
@@ -69,11 +90,6 @@ def submit_run(
         json.dumps(detect_environment(), indent=2)
     )
 
-    # Mark submitted
-    run.status = "submitted"
-    store.save_run(run)
-    store.save_status(run_id, StatusFile(status="submitted", updated_at=utc_now_iso()))
-
     # Launch worker with error handling
     try:
         runner = LocalJobRunner()
@@ -84,6 +100,11 @@ def submit_run(
             python_executable=req.python_executable,
         )
         (run_dir / "runtime" / "job.json").write_text(job.model_dump_json(indent=2))
+        # Mark submitted only if worker launch succeeded
+        run.status = "submitted"
+        store.save_run(run)
+        store.save_status(run_id, StatusFile(status="submitted", updated_at=utc_now_iso()))
+        return SubmitRunResponse(run_id=run_id, status=run.status)
     except Exception as e:
         # Log error to stderr.log
         log_path = run_dir / "logs" / "stderr.log"
@@ -95,8 +116,6 @@ def submit_run(
         store.save_run(run)
         store.save_status(run_id, StatusFile(status="failed", updated_at=utc_now_iso(), detail=f"Worker launch failed: {e}"))
         raise HTTPException(status_code=500, detail=f"Worker launch failed: {e}")
-
-    return SubmitRunResponse(run_id=run_id, status=run.status)
 
 
 @router.post("/runs/{run_id}/cancel")
