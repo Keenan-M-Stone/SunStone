@@ -1,4 +1,3 @@
-
 import Dashboard from './Dashboard'
 import RunPanel from './RunPanel'
 
@@ -8,12 +7,6 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { getResourceUsage } from './resourceApi'
-
-// Utility: log resource polling
-function logResource(msg: string, ...args: any[]) {
-  // eslint-disable-next-line no-console
-  console.log('[ResourceMonitor]', msg, ...args)
-}
 
 import { apiBaseUrl } from './config'
 import {
@@ -27,6 +20,45 @@ import {
   submitRun,
 } from './sunstoneApi'
 import type { ArtifactEntry, ProjectRecord, RunRecord } from './types'
+
+// Estimate memory usage for Meep grid (rough, assumes double precision, 8 bytes per grid point per field)
+function estimateMeepMemory(cellSize: [number, number, number], resolution: number, dimension: string): number {
+  // For 2D: grid = (cell_x * res) * (cell_y * res)
+  // For 3D: grid = (cell_x * res) * (cell_y * res) * (cell_z * res)
+  const dim = dimension === '3d' ? 3 : 2;
+  const nx = Math.max(1, Math.round(cellSize[0] * resolution));
+  const ny = Math.max(1, Math.round(cellSize[1] * resolution));
+  const nz = dim === 3 ? Math.max(1, Math.round(cellSize[2] * resolution)) : 1;
+  const nGrid = nx * ny * nz;
+  // Assume 3 fields (Ex, Ey, Ez) for safety
+  const nFields = 3;
+  // 8 bytes per value
+  return nGrid * nFields * 8;
+}
+
+// Auto-fix function to reduce memory usage
+function autoFixMeepMemory(cellSize: [number, number, number], resolution: number, dimension: string, maxBytes: number = 2e9) {
+  // Try reducing resolution first, then cell size
+  let res = resolution;
+  let cs = [...cellSize];
+  let mem = estimateMeepMemory(cs, res, dimension);
+  while (mem > maxBytes && res > 8) {
+    res = Math.floor(res * 0.8);
+    mem = estimateMeepMemory(cs, res, dimension);
+  }
+  // If still too large, reduce cell size
+  while (mem > maxBytes && (cs[0] > 1e-7 || cs[1] > 1e-7 || (dimension === '3d' && cs[2] > 1e-7))) {
+    cs = cs.map((v, i) => (i < (dimension === '3d' ? 3 : 2) ? v * 0.9 : v));
+    mem = estimateMeepMemory(cs, res, dimension);
+  }
+  return { cellSize: cs as [number, number, number], resolution: res, estimated: mem };
+}
+
+// Utility: log resource polling
+function logResource(msg: string, ...args: any[]) {
+  // eslint-disable-next-line no-console
+  console.log('[ResourceMonitor]', msg, ...args)
+}
 
 // Utility: validate cell and geometry sizes for Meep compatibility
 function validateMeep2D(cellSize: [number, number, number], geometry: GeometryItem[]): string | null {
@@ -399,6 +431,10 @@ function downloadJson(data: unknown, filename: string) {
 
 
 function App() {
+    // State for memory warning (moved from top level)
+    const [meepMemoryWarning, setMeepMemoryWarning] = useState<string | null>(null);
+    const [showMeepMemoryPrompt, setShowMeepMemoryPrompt] = useState(false);
+    const [autoFixSuggestion, setAutoFixSuggestion] = useState<{cellSize: [number,number,number], resolution: number, estimated: number} | null>(null);
   const [projectName, setProjectName] = useState('demo')
   const [project, setProject] = useState<ProjectRecord | null>(null)
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('cad')
@@ -1720,31 +1756,68 @@ function App() {
   }
 
   async function onSubmitRun() {
-    setError(null)
+    setError(null);
     if (!run) {
-      setError('Create a run first.')
-      return
+      setError('Create a run first.');
+      return;
     }
-    // If Meep 2D, validate cell and geometry sizes before submitting
-    if (backend === 'meep' && dimension === '2d') {
-      const compatMsg = validateMeep2D(cellSize, geometry)
+    // If Meep, validate cell and geometry sizes before submitting
+    if (backend === 'meep') {
+      const compatMsg = validateMeep2D(cellSize, geometry);
       if (compatMsg) {
-        setMeepCompatWarning(compatMsg)
-        setShowMeepCompatPrompt(true)
-        return
+        setMeepCompatWarning(compatMsg);
+        setShowMeepCompatPrompt(true);
+        return;
+      }
+      // Memory estimation (2GB default threshold)
+      const memBytes = estimateMeepMemory(cellSize, resolution, dimension);
+      const maxBytes = 2 * 1024 * 1024 * 1024; // 2GB
+      if (memBytes > maxBytes) {
+        setMeepMemoryWarning(`Estimated memory usage for this run is ${(memBytes/1e9).toFixed(2)} GB, which may exceed your system's RAM and cause the run to fail. Reduce resolution or cell size.`);
+        setAutoFixSuggestion(autoFixMeepMemory(cellSize, resolution, dimension, maxBytes));
+        setShowMeepMemoryPrompt(true);
+        return;
       }
     }
-    setBusy('Submitting run…')
+    setBusy('Submitting run…');
     try {
-      await submitRun(run.id, backend, backend === 'meep' && meepPythonExecutable ? meepPythonExecutable : undefined)
-      const r = await getRun(run.id)
-      setRun(r)
+      await submitRun(run.id, backend, backend === 'meep' && meepPythonExecutable ? meepPythonExecutable : undefined);
+      const r = await getRun(run.id);
+      setRun(r);
     } catch (e: any) {
-      setError(e?.message ?? String(e))
+      setError(e?.message ?? String(e));
     } finally {
-      setBusy(null)
+      setBusy(null);
     }
   }
+  // Handler to auto-fix for Meep memory
+  function autoFixMeepMemoryApply() {
+    if (autoFixSuggestion) {
+      setCellSize(autoFixSuggestion.cellSize);
+      setResolution(autoFixSuggestion.resolution);
+      setMeepMemoryWarning(null);
+      setShowMeepMemoryPrompt(false);
+    }
+  }
+  {/* Render Meep memory warning prompt */}
+  {showMeepMemoryPrompt && (
+    <div className="meep-compat-modal" style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.4)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div className="meep-compat-content" style={{background:'#222',padding:24,borderRadius:10,maxWidth:400,color:'#fff',boxShadow:'0 4px 24px #0008'}}>
+        <h3 style={{marginTop:0}}>Meep Memory Warning</h3>
+        <div>{meepMemoryWarning}</div>
+        {autoFixSuggestion && (
+          <div style={{ marginTop: 12, fontSize: 15 }}>
+            <div>Suggested fix: resolution → <b>{autoFixSuggestion.resolution}</b>, cell size → <b>{autoFixSuggestion.cellSize.map(v => v.toExponential(2)).join(', ')}</b></div>
+            <div>Estimated new memory: {(autoFixSuggestion.estimated/1e9).toFixed(2)} GB</div>
+          </div>
+        )}
+        <div style={{marginTop: 18, display:'flex',justifyContent:'flex-end',gap:12}}>
+          {autoFixSuggestion && <button onClick={autoFixMeepMemoryApply}>Auto-fix and Preview</button>}
+          <button onClick={() => setShowMeepMemoryPrompt(false)}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )}
 
   async function onCancelRun() {
     setError(null)
