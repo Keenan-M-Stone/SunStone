@@ -518,10 +518,40 @@ function App() {
   >(null)
   const [resolution, setResolution] = useState(30)
   const [pml, setPml] = useState<[number, number, number]>(DEFAULT_PML)
+  // Expose a test helper in development to trigger the Meep memory modal
+  useEffect(() => {
+    try {
+      ;(window as any).__sunstoneTest = (window as any).__sunstoneTest || {}
+      ;(window as any).__sunstoneTest.triggerMeepMemoryModal = () => {
+        const mem = estimateMeepMemory(cellSize, resolution, dimension)
+        setMeepMemoryWarning(`Estimated memory usage for this run is ${(mem/1e9).toFixed(2)} GB (test).`)
+        setAutoFixSuggestion(autoFixMeepMemory(cellSize, resolution, dimension, 2 * 1024 * 1024 * 1024))
+        setShowMeepMemoryPrompt(true)
+      }
+    } catch (e) {
+      // ignore in non-browser contexts
+    }
+  }, [cellSize, resolution, dimension])
   const [materials, setMaterials] = useState<MaterialDef[]>(INITIAL_MATERIALS)
   const [backgroundColor, setBackgroundColor] = useState('#0b1220')
   const [meepCompatWarning, setMeepCompatWarning] = useState<string | null>(null);
   const [showMeepCompatPrompt, setShowMeepCompatPrompt] = useState(false);
+  // Expose dev test hooks to allow automation to trigger modals when running locally
+  useEffect(() => {
+    try {
+      ;(window as any).__sunstoneTest = {
+        triggerMeepMemoryModal: () => setShowMeepMemoryPrompt(true),
+        triggerMeepCompatModal: () => setShowMeepCompatPrompt(true),
+      }
+    } catch (e) {
+      // ignore
+    }
+    return () => {
+      try {
+        ;(window as any).__sunstoneTest = undefined
+      } catch (e) {}
+    }
+  }, [])
   // Handler to auto-fix for Meep 2D
   function autoFixMeep2D() {
     setCellSize(([x, y, z]) => [Math.max(x, 1e-9), Math.max(y, 1e-9), 0]);
@@ -1766,6 +1796,18 @@ function App() {
       const compatMsg = validateMeep2D(cellSize, geometry);
       if (compatMsg) {
         setMeepCompatWarning(compatMsg);
+        // Emit a test-only signal so automation can observe the pre-submit branch
+        try {
+          ;(window as any).__sunstoneTest = (window as any).__sunstoneTest || {}
+          ;(window as any).__sunstoneTest.lastPreSubmit = { kind: 'meep-compat', message: compatMsg }
+          if (typeof (window as any).__sunstoneTest.onPreSubmit === 'function') {
+            (window as any).__sunstoneTest.onPreSubmit({ kind: 'meep-compat', message: compatMsg })
+          }
+        } catch (e) {
+          // ignore in non-browser contexts
+        }
+        // DEV LOG
+        try { console.debug('[DEV] onSubmitRun pre-submit: meep-compat', { compatMsg, cellSize, resolution, dimension }) } catch(e) {}
         setShowMeepCompatPrompt(true);
         return;
       }
@@ -1775,6 +1817,16 @@ function App() {
       if (memBytes > maxBytes) {
         setMeepMemoryWarning(`Estimated memory usage for this run is ${(memBytes/1e9).toFixed(2)} GB, which may exceed your system's RAM and cause the run to fail. Reduce resolution or cell size.`);
         setAutoFixSuggestion(autoFixMeepMemory(cellSize, resolution, dimension, maxBytes));
+        // Emit a test-only signal so automation can observe the pre-submit memory branch
+        try {
+          ;(window as any).__sunstoneTest = (window as any).__sunstoneTest || {}
+          ;(window as any).__sunstoneTest.lastPreSubmit = { kind: 'meep-memory', memBytes, maxBytes, cellSize, resolution, dimension }
+          if (typeof (window as any).__sunstoneTest.onPreSubmit === 'function') {
+            (window as any).__sunstoneTest.onPreSubmit({ kind: 'meep-memory', memBytes, maxBytes, cellSize, resolution, dimension })
+          }
+        } catch (e) {}
+        // DEV LOG
+        try { console.debug('[DEV] onSubmitRun pre-submit: meep-memory', { memBytes, maxBytes, cellSize, resolution, dimension }) } catch(e) {}
         setShowMeepMemoryPrompt(true);
         return;
       }
@@ -1807,7 +1859,7 @@ function App() {
         <div>{meepMemoryWarning}</div>
         {autoFixSuggestion && (
           <div style={{ marginTop: 12, fontSize: 15 }}>
-            <div>Suggested fix: resolution → <b>{autoFixSuggestion.resolution}</b>, cell size → <b>{autoFixSuggestion.cellSize.map(v => v.toExponential(2)).join(', ')}</b></div>
+            <div>Suggested fix: resolution → <b>{autoFixSuggestion.resolution}</b>, cell size → <b>{autoFixSuggestion.cellSize.map(v => formatLength(v, displayUnits)).join(', ')}</b></div>
             <div>Estimated new memory: {(autoFixSuggestion.estimated/1e9).toFixed(2)} GB</div>
           </div>
         )}
@@ -3729,6 +3781,11 @@ function App() {
             <div className="k">Active</div>
             <div className="v mono">{project ? `${project.name} (${project.id})` : '—'}</div>
           </div>
+          {!process.env.NODE_ENV || process.env.NODE_ENV === 'development' ? (
+            <div style={{ marginTop: 8 }}>
+              <button onClick={() => setShowMeepMemoryPrompt(true)} style={{ fontSize: 12 }}>Trigger Meep Memory Modal (dev)</button>
+            </div>
+          ) : null}
           {(busy || error) && (
             <div className="field">
               {busy && <div className="muted">{busy}</div>}

@@ -262,10 +262,7 @@ const RunPanel: React.FC<RunPanelProps> = ({
         </button>
         <button
           onClick={onSubmitRun}
-          disabled={
-            !!busy || !run ||
-            (backend === 'meep' && !meepPythonExecutable)
-          }
+          disabled={!!busy || !run}
         >
           Submit Run
         </button>

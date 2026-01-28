@@ -1,11 +1,27 @@
 
 from __future__ import annotations
+
+import json
+from ...hardware import detect_environment
+from ...jobs import LocalJobRunner
+from ...models.api import CreateRunRequest, SubmitRunRequest, SubmitRunResponse
+from ...models.run import JobFile, RunRecord, StatusFile
+
 from ...settings import Settings, get_settings
+from ...store import RunStore
+from ...util.time import utc_now_iso
 
 from fastapi.responses import JSONResponse
 from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter(tags=["runs"])
+
+
+def _store(settings: Settings) -> RunStore:
+    s = RunStore(settings.data_dir)
+    s.ensure()
+    return s
+
 
 @router.get("/runs/{run_id}/resource")
 def get_resource(run_id: str, settings: Settings = Depends(get_settings)):
@@ -20,26 +36,6 @@ def get_resource(run_id: str, settings: Settings = Depends(get_settings)):
         return JSONResponse(content=data)
     except Exception:
         return JSONResponse(content=[])
-
-
-import json
-
-from ...hardware import detect_environment
-from ...jobs import LocalJobRunner
-from ...models.api import CreateRunRequest, SubmitRunRequest, SubmitRunResponse
-from ...models.run import JobFile, RunRecord, StatusFile
-
-from ...settings import Settings, get_settings
-from ...store import RunStore
-from ...util.time import utc_now_iso
-
-router = APIRouter(tags=["runs"])
-
-
-def _store(settings: Settings) -> RunStore:
-    s = RunStore(settings.data_dir)
-    s.ensure()
-    return s
 
 
 @router.post("/projects/{project_id}/runs", response_model=RunRecord)

@@ -333,3 +333,25 @@ class MeepBackend(Backend):
                 indent=2,
             )
         )
+
+        # If no JSON snapshot artifact was produced, write a minimal placeholder
+        # so the frontend can display a basic live preview for testing.
+        placeholder_path = fields_dir / "field_snapshot.json"
+        if not placeholder_path.exists():
+            try:
+                # small default grid
+                w = min(64, max(8, int( max(1, resolution/1) )))
+                h = w
+                data = [0.0] * (w * h)
+                payload = {
+                    "component": "Ez",
+                    "width": w,
+                    "height": h,
+                    "min": 0.0,
+                    "max": 0.0,
+                    "data": data,
+                }
+                placeholder_path.write_text(json.dumps(payload))
+                logger.info(f"[MeepBackend] Wrote placeholder field_snapshot.json ({w}x{h})")
+            except Exception:
+                logger.exception("[MeepBackend] Failed to write placeholder field_snapshot.json")
