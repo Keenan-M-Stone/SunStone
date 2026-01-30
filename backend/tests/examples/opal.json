@@ -1,0 +1,10 @@
+{
+  "domain": {"dimension": "2d", "cell_size": [1.5, 1.5, 0.0], "resolution": 30},
+  "geometry": [
+    {"type": "block", "size": [0.3, 0.3, 0.0], "center": [0.2, 0.0, 0.0], "material": "mat1"}
+  ],
+  "materials": {"mat1": {"model": "constant", "eps": 2.0}},
+  "sources": [],
+  "monitors": [],
+  "outputs": {}
+}

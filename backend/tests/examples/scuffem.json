@@ -1,0 +1,10 @@
+{
+  "domain": {"dimension": "2d", "cell_size": [1.0, 1.0, 0.0], "resolution": 40},
+  "geometry": [
+    {"type": "cylinder", "radius": 0.15, "height": 0.0, "center": [0.0, 0.0, 0.0], "material": "mat1"}
+  ],
+  "materials": {"mat1": {"model": "pec"}},
+  "sources": [],
+  "monitors": [],
+  "outputs": {}
+}

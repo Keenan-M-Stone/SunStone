@@ -1,0 +1,10 @@
+{
+  "domain": {"dimension": "2d", "cell_size": [1.0, 1.0, 0.0], "resolution": 50},
+  "geometry": [
+    {"type": "block", "size": [0.2, 0.2, 0.1], "center": [0.0, 0.0, 0.0], "material": "mat_dielectric"}
+  ],
+  "materials": {"mat_dielectric": {"model": "constant", "eps": 3.5}},
+  "sources": [],
+  "monitors": [],
+  "outputs": {}
+}

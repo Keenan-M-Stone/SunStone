@@ -1,11 +1,9 @@
-import Dashboard from './Dashboard'
 import RunPanel from './RunPanel'
 
 import './App.css'
-import type { CSSProperties, MouseEvent, WheelEvent } from 'react'
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import type { CSSProperties, WheelEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { getResourceUsage } from './resourceApi'
 
 import { apiBaseUrl } from './config'
@@ -658,7 +656,58 @@ function App() {
 
   const [run, setRun] = useState<RunRecord | null>(null)
   const [backend, setBackend] = useState('dummy')
+  // backend -> options map persisted in the UI while editing runs
+  const [backendOptionsMap, setBackendOptionsMap] = useState<Record<string, any>>(() => {
+    try {
+      const raw = localStorage.getItem('sunstone_backend_options') || '{}'
+      return JSON.parse(raw)
+    } catch (e) {
+      return {}
+    }
+  })
+  const setBackendOptionsFor = (name: string, opts: Record<string, any> | null) => {
+    setBackendOptionsMap((m) => {
+      const next = { ...m, [name]: opts || {} }
+      try { localStorage.setItem('sunstone_backend_options', JSON.stringify(next)) } catch (e) {}
+      return next
+    })
+  }
+  const currentBackendOptions = backendOptionsMap[backend] || null
+
+  // Backend capabilities and translation previews
+  const [backendCapabilitiesMap, setBackendCapabilitiesMap] = useState<Record<string, any>>({})
+  const setBackendCapabilitiesFor = (name: string, caps: Record<string, any>) => {
+    setBackendCapabilitiesMap((m) => ({ ...m, [name]: caps }))
+  }
+  const currentBackendCapabilities = backendCapabilitiesMap[backend] || null
+
+  const [translationPreviews, setTranslationPreviews] = useState<Record<string, string>>({})
+  const setTranslationForBackend = (name: string, text: string|null) => {
+    setTranslationPreviews((m) => ({ ...m, [name]: text ?? '' }))
+  }
+
+  // Fetch backend capabilities when backend selection changes so UI can show dynamic controls
+  useEffect(() => {
+    let cancelled = false
+    async function fetchCaps() {
+      try {
+        const res = await fetch(`/api/backends/${encodeURIComponent(backend)}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        setBackendCapabilitiesFor(backend, data)
+      } catch (e) {
+        // ignore
+      }
+    }
+    if (backend) fetchCaps()
+    return () => { cancelled = true }
+  }, [backend])
   const [meepPythonExecutable, setMeepPythonExecutable] = useState('')
+  const [executionMode, setExecutionMode] = useState<'local'|'ssh'|'slurm'>('local')
+  const [sshTarget, setSshTarget] = useState('')
+  const [sshOptions, setSshOptions] = useState<Record<string, any>>({})
+  const [remotePythonExecutable, setRemotePythonExecutable] = useState('')
   const [movieDt, setMovieDt] = useState(2e-15)
   const [movieStart, setMovieStart] = useState(0)
   const [movieStop, setMovieStop] = useState(2e-13)
@@ -1833,7 +1882,8 @@ function App() {
     }
     setBusy('Submitting run…');
     try {
-      await submitRun(run.id, backend, backend === 'meep' && meepPythonExecutable ? meepPythonExecutable : undefined);
+      const pythonExec = executionMode === 'ssh' || executionMode === 'slurm' ? (remotePythonExecutable || undefined) : (backend === 'meep' && meepPythonExecutable ? meepPythonExecutable : undefined)
+      await submitRun(run.id, backend, pythonExec, currentBackendOptions || undefined, executionMode, sshTarget || undefined, sshOptions || undefined);
       const r = await getRun(run.id);
       setRun(r);
     } catch (e: any) {
@@ -3898,7 +3948,7 @@ function App() {
             <select
               value={resolutionPreviewMode}
               onChange={(e) => {
-                const next = e.target.value as 'off' | 'grid' | 'dots' | 'raster'
+                const next = e.target.value as 'off' | 'grid' | 'dots' | 'raster' | 'translated'
                 setResolutionPreviewMode(next)
                 if (next !== 'off') setLastResolutionMode(next)
               }}
@@ -3906,6 +3956,9 @@ function App() {
               <option value="off">Off</option>
               <option value="dots">Cell centers</option>
               <option value="raster">Rasterized (grid)</option>
+              {currentBackendCapabilities?.supports_translation && (
+                <option value="translated">Translated preview ({backend})</option>
+              )}
             </select>
           </div>
           <div className="kv">
@@ -4301,6 +4354,24 @@ function App() {
                 if (nx > maxCells || ny > maxCells) return null
                 const halfW = safeCellSize[0] / 2
                 const halfH = safeCellSize[1] / 2
+                if (mode === 'translated') {
+                  const txt = translationPreviews[backend]
+                  if (!txt) {
+                    return (
+                      <g>
+                        <text x={-halfW + 8} y={-halfH + 18} fontSize={12} fill="#ffcc66">Translated preview not available for this backend. Click "Translate" in the Run panel.</text>
+                      </g>
+                    )
+                  }
+                  return (
+                    <foreignObject x={-halfW} y={-halfH} width={safeCellSizeScene[0]} height={safeCellSizeScene[1]}>
+                      <div xmlns="http://www.w3.org/1999/xhtml" style={{ background: 'rgba(10,12,16,0.86)', color: '#e8e8e8', padding: 8, overflow: 'auto', maxHeight: '100%', fontSize: 12 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 6 }}>Translated preview ({backend})</div>
+                        <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 12, margin: 0 }}>{txt}</pre>
+                      </div>
+                    </foreignObject>
+                  )
+                }
                 if (mode === 'raster') {
                   const cells: JSX.Element[] = []
                   const cellRadius = step * 0.5
@@ -6065,11 +6136,24 @@ function App() {
             run={run}
             backend={backend}
             setBackend={setBackend}
+            backendOptions={currentBackendOptions}
+            setBackendOptions={(opts) => setBackendOptionsFor(backend, opts)}
+            backendCapabilities={currentBackendCapabilities}
+            setTranslationForBackend={(txt) => setTranslationForBackend(backend, txt)}
+            translationPreview={translationPreviews[backend] || ''}
             busy={busy}
             error={error}
             project={project}
             onCreateRun={onCreateRun}
             onSubmitRun={onSubmitRun}
+            executionMode={executionMode}
+            setExecutionMode={setExecutionMode}
+            sshTarget={sshTarget}
+            setSshTarget={setSshTarget}
+            sshOptions={sshOptions}
+            setSshOptions={setSshOptions}
+            remotePythonExecutable={remotePythonExecutable}
+            setRemotePythonExecutable={setRemotePythonExecutable}
             onCancelRun={onCancelRun}
             meepPythonExecutable={meepPythonExecutable}
             setMeepPythonExecutable={setMeepPythonExecutable}

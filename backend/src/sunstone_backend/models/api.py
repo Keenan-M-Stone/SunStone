@@ -29,6 +29,18 @@ class SubmitRunRequest(BaseModel):
             "(useful for solver-specific envs)."
         ),
     )
+    ssh_target: str | None = Field(
+        default=None,
+        description=("Optional SSH target in user@host form to run the job remotely when mode is 'ssh'."),
+    )
+    ssh_options: dict | None = Field(
+        default=None,
+        description=("Optional SSH options such as {'port': 22, 'identity_file': '/path/to/key'}"),
+    )
+    backend_options: dict | None = Field(
+        default=None,
+        description=("Optional backend-specific options passed to the worker and persisted in runtime/backend_options.json"),
+    )
 
 
 class SubmitRunResponse(BaseModel):

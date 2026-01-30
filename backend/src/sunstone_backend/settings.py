@@ -27,5 +27,11 @@ class Settings(BaseSettings):
     default_backend: str = "dummy"
 
 
+# Use a module-level cached Settings so tests can mutate the same instance
+_GLOBAL_SETTINGS: Settings | None = None
+
 def get_settings() -> Settings:
-    return Settings()
+    global _GLOBAL_SETTINGS
+    if _GLOBAL_SETTINGS is None:
+        _GLOBAL_SETTINGS = Settings()
+    return _GLOBAL_SETTINGS
