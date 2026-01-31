@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { getRunJobStatus, cancelRunJob } from './sunstoneApi'
 import { apiBaseUrl } from './config'
 
@@ -116,7 +116,7 @@ export function JobControls({ runId }: { runId: string }) {
         // ignore parse errors
       }
     }
-    src.onerror = (ev) => {
+    src.onerror = () => {
       // EventSource gives limited info; report general guidance
       const msg = 'Streaming connection error. Check network and that the backend is reachable.'
       setStreamError(msg)

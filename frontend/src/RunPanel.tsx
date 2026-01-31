@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Dashboard from './Dashboard';
 import { SSHOptions, JobControls } from './RunPanelExtras'
+import SchemaForm from './SchemaForm'
 // ...other necessary imports (copy from App.tsx)
 
 
@@ -177,11 +178,16 @@ const RunPanel: React.FC<RunPanelProps> = ({
     setLocalOptions(backendOptions || {});
   }, [backend, backendOptions]);
 
+  // ensure the prop is referenced to avoid TS unused parameter warning
+  void showProperties
+
   // When a run exists, show job-level controls for SSH submissions
   const urlParams = (typeof window !== 'undefined') ? new URLSearchParams(window.location.search) : new URLSearchParams('')
   const e2eJob = urlParams.get('e2e_job') === '1'
   const showJobControls = Boolean((run && executionMode === 'ssh') || e2eJob)
 
+  const [showSchemaModal, setShowSchemaModal] = useState(false)
+  const [schemaSelection, setSchemaSelection] = useState<'boundary'|'material'|'source'>('boundary')
   // Update option and notify parent
   const updateOption = (key: string, value: any) => {
     const next = { ...(localOptions || {}), [key]: value };
@@ -501,6 +507,31 @@ const RunPanel: React.FC<RunPanelProps> = ({
           {showJobControls && (
             <div style={{ marginTop: 12 }}>
               <JobControls runId={(run && run.id) || (e2eJob ? 'e2e-run' : '')} />
+            </div>
+          )}
+
+          <div style={{ marginTop: 8 }}>
+            <button onClick={() => setShowSchemaModal(true)}>Advanced backend schema</button>
+          </div>
+
+          {showSchemaModal && (
+            <div style={{ position: 'fixed', left:0, top:0, right:0, bottom:0, zIndex:1200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 640, maxHeight: '80vh', overflow: 'auto', background: '#0f0f10', padding: 12 }}>
+                <h3>Backend schema viewer</h3>
+                <label>Schema
+                  <select value={schemaSelection} onChange={e => setSchemaSelection(e.target.value as any)}>
+                    <option value="boundary">boundary</option>
+                    <option value="material">material</option>
+                    <option value="source">source</option>
+                  </select>
+                </label>
+                <div style={{ marginTop: 8 }}>
+                  <SchemaForm schemaPath={schemaSelection} value={{}} onChange={() => {}} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                  <button onClick={() => setShowSchemaModal(false)}>Close</button>
+                </div>
+              </div>
             </div>
           )}
         </div>

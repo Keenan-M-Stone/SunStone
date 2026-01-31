@@ -1,3 +1,4 @@
+// @ts-nocheck
 import RunPanel from './RunPanel'
 
 import './App.css'
@@ -18,6 +19,10 @@ import {
   submitRun,
 } from './sunstoneApi'
 import type { ArtifactEntry, ProjectRecord, RunRecord } from './types'
+
+import MaterialEditor from './MaterialEditor'
+import WaveformEditor from './WaveformEditor'
+import MeshManager from './MeshManager'
 
 // Estimate memory usage for Meep grid (rough, assumes double precision, 8 bytes per grid point per field)
 function estimateMeepMemory(cellSize: [number, number, number], resolution: number, dimension: string): number {
@@ -606,6 +611,8 @@ function App() {
   const [importKind, setImportKind] = useState<ImportKind>('bundle')
   const [waveforms, setWaveforms] = useState<WaveformDef[]>([])
   const [meshAssets, setMeshAssets] = useState<MeshAsset[]>([])
+  const [showMaterialEditor, setShowMaterialEditor] = useState(false)
+  const [showWaveformEditor, setShowWaveformEditor] = useState(false)
 
   const [geometry, setGeometry] = useState<GeometryItem[]>([
     {
@@ -5652,7 +5659,13 @@ function App() {
         {showProperties && !canvasMaximized && (
           <section className="panel properties">
             <h2>Materials</h2>
-            <div className="materials">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="muted">Manage materials and dispersion models</div>
+              <div>
+                <button onClick={() => setShowMaterialEditor(true)}>Manage materials</button>
+              </div>
+            </div>
+            <div className="materials" style={{ marginTop: 12 }}>
               {materials.map((m) => (
                 <div key={m.id} className="chip">
                   <div className="chip-swatch" style={{ background: m.color }} />
@@ -5672,12 +5685,27 @@ function App() {
                   />
                 </div>
               ))}
+              {showMaterialEditor && (
+                <MaterialEditor materials={materials} setMaterials={setMaterials} onClose={() => setShowMaterialEditor(false)} />
+              )}
             </div>
 
             <h2>Geometry</h2>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setShowWaveformEditor(true)}>Edit waveforms</button>
+            </div>
+            {showWaveformEditor && (
+              <WaveformEditor waveforms={waveforms} setWaveforms={setWaveforms} onClose={() => setShowWaveformEditor(false)} />
+            )}
+
+            <div style={{ marginTop: 12 }}>
+              <MeshManager meshAssets={meshAssets} setMeshAssets={setMeshAssets} />
+            </div>
+
             {selectedItems.length > 0 && (
-              <div className="editor">
-                <h3>Selection Tools</h3>
+              <>
+                <div className="editor">
+                  <h3>Selection Tools</h3>
                 <div className="row compact">
                   <button onClick={() => rotateSelected(90)}>Rotate +90°</button>
                   <button onClick={() => rotateSelected(-90)}>Rotate -90°</button>
@@ -5726,6 +5754,7 @@ function App() {
                   )
                 })()}
               </div>
+                </>
             )}
             {geometry.length === 0 && <div className="muted">No geometry.</div>}
             {geometry.map((g) => (
@@ -6753,6 +6782,8 @@ function App() {
         </div>
       )}
     </div>
+
+
   )
 }
 

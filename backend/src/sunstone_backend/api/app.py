@@ -29,6 +29,8 @@ def create_app() -> FastAPI:
     app.include_router(mesher.router)
     from .routes import metrics
     app.include_router(metrics.router)
+    from .routes import meshes
+    app.include_router(meshes.router)
 
     @app.get("/health")
     def health() -> dict:

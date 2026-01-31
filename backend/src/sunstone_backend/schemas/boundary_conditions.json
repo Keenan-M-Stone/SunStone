@@ -1,0 +1,13 @@
+{
+  "$id": "https://example.com/schemas/boundary_conditions.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BoundaryCondition",
+  "description": "Schema for specifying boundary conditions per face/axis in run specs",
+  "type": "object",
+  "properties": {
+    "type": {"type": "string", "enum": ["pml", "periodic", "pec", "pmc", "impedance", "symmetry"], "description": "Type of boundary condition"},
+    "params": {"type": "object", "description": "Optional parameters specific to the BC type"}
+  },
+  "required": ["type"],
+  "additionalProperties": false
+}

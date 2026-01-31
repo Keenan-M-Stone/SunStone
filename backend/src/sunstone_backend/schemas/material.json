@@ -1,0 +1,32 @@
+{
+  "$id": "https://example.com/schemas/material.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Material",
+  "description": "Material definition supporting isotropic and tensor constitutive relations",
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "type": {"type": "string", "enum": ["isotropic", "anisotropic", "dispersive"], "default": "isotropic"},
+    "epsilon": {
+      "oneOf": [
+        {"type": "number"},
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9}
+      ],
+      "description": "Permittivity: scalar or 3x3 flattened tensor (row-major). Complex values should be expressed as objects in frequency-dependent definitions for dispersive types."
+    },
+    "mu": {
+      "oneOf": [
+        {"type": "number"},
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9}
+      ],
+      "description": "Permeability: scalar or 3x3 flattened tensor"
+    },
+    "dispersion": {
+      "type": "object",
+      "description": "Optional dispersion model; keys define model (e.g., 'drude','lorentz') and parameters",
+      "additionalProperties": true
+    }
+  },
+  "required": ["name", "epsilon"],
+  "additionalProperties": false
+}
