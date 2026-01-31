@@ -7,6 +7,13 @@ import json
 
 router = APIRouter(tags=["backends"])
 
+# Schema references for run-spec related objects (frontend may fetch or embed these)
+BACKEND_SCHEMAS = {
+    "boundary": "sunstone_backend/schemas/boundary_conditions.json",
+    "material": "sunstone_backend/schemas/material.json",
+    "source": "sunstone_backend/schemas/source.json",
+}
+
 # Minimal capability descriptions for each backend — extend as needed.
 CAPABILITIES: dict[str, dict[str, Any]] = {
     "dummy": {
@@ -14,6 +21,11 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "label": "Dummy",
         "supports_translation": False,
         "capabilities": {},
+        "boundary_types": ["pml","pec","periodic","symmetry","impedance"],
+        "material_models": ["isotropic"],
+        "source_types": ["toneburst","gaussian_pulse"],
+        "detector_types": ["time_probe","power_integral"],
+        "schemas": BACKEND_SCHEMAS,
     },
     "meep": {
         "name": "meep",
@@ -23,6 +35,11 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
             "pml_thickness": {"type": "number", "min": 0.0, "max": 10.0, "default": 0.0, "label": "PML thickness"},
             "max_time": {"type": "number", "min": 0.0, "default": 200, "label": "Max time"},
         },
+        "boundary_types": ["pml","pec","periodic","symmetry","impedance"],
+        "material_models": ["isotropic","anisotropic","drude","lorentz"],
+        "source_types": ["gaussian_pulse","toneburst","plane_wave","dipole"],
+        "detector_types": ["time_probe","fft_probe","power_integral","s_parameter"],
+        "schemas": BACKEND_SCHEMAS,
     },
     "ceviche": {
         "name": "ceviche",
@@ -36,6 +53,11 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
             "wavelength_points": {"type": "number", "min": 1, "max": 1000, "default": 10, "label": "Wavelength points"},
         },
         "ui": {"groups": [["mode", "resolution"], ["wavelength_start", "wavelength_stop", "wavelength_points"]], "advanced": []},
+        "boundary_types": ["pec","periodic"],
+        "material_models": ["isotropic","anisotropic"],
+        "source_types": ["plane_wave","toneburst"],
+        "detector_types": ["fft_probe","s_parameter"],
+        "schemas": BACKEND_SCHEMAS,
     },
     "opal": {
         "name": "opal",
@@ -47,6 +69,11 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
             "solver_tolerance": {"type": "number", "min": 1e-12, "max": 1e-1, "default": 1e-6, "label": "Solver tolerance"},
             "mesh_file": {"type": "file", "accept": [".msh", ".stl"], "label": "Precomputed mesh"}
         },
+        "boundary_types": ["pec","periodic"],
+        "material_models": ["isotropic"],
+        "source_types": ["plane_wave","toneburst"],
+        "detector_types": ["s_parameter","power_integral"],
+        "schemas": BACKEND_SCHEMAS,
     },
     "scuffem": {
         "name": "scuffem",
@@ -57,6 +84,11 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
             "frequency_sweep": {"type": "range", "fields": ["start", "stop", "points"], "label": "Frequency sweep"},
             "mesh_file": {"type": "file", "accept": [".msh", ".stl"], "label": "Precomputed mesh"}
         },
+        "boundary_types": ["pec","periodic"],
+        "material_models": ["isotropic"],
+        "source_types": ["plane_wave","toneburst"],
+        "detector_types": ["fft_probe","s_parameter"],
+        "schemas": BACKEND_SCHEMAS,
     },
     "pygdm": {
         "name": "pygdm",
@@ -67,7 +99,12 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
             "incident_polarization": {"type": "enum", "values": ["x", "y", "z"], "default": "x", "label": "Incident polarization"},
         },
         "resource": {"supports_gpu": False, "supports_multithread": True, "supports_distributed": False, "resource_schema": {"cpu_cores": {"type": "number", "min": 1, "max": 128, "default": 1, "label": "CPU cores"}, "gpus": {"type": "number", "min": 0, "max": 8, "default": 0, "label": "GPUs"}}},
-    },
+        "boundary_types": ["pec","periodic"],
+        "material_models": ["isotropic"],
+        "source_types": ["plane_wave","dipole"],
+        "detector_types": ["fft_probe","power_integral"],
+        "schemas": BACKEND_SCHEMAS,
+    }
 } 
 
 
@@ -174,3 +211,21 @@ def translate_backend_multipart(name: str, spec: str | None = Form(None), mesh: 
         'warnings': warnings,
     }
     return payload
+
+
+@router.get('/schemas/{name}')
+def get_schema(name: str):
+    # Serve JSON schema files from the package schemas directory
+    key = name.strip().lower()
+    mapping = BACKEND_SCHEMAS
+    if key not in mapping:
+        raise HTTPException(status_code=404, detail='Unknown schema')
+    path = mapping[key]
+    try:
+        # path is relative to package root under sunstone_backend/schemas
+        import importlib.resources as pkg_resources
+        pkg = __package__.split('.api')[0]
+        data = pkg_resources.read_text(pkg + '.schemas', path.split('/')[-1])
+        return json.loads(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to load schema: {e}') from e

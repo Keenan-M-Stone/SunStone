@@ -71,6 +71,12 @@ interface RunPanelProps {
   artifacts: ArtifactEntry[];
   onRefreshArtifacts: () => void;
   downloadArtifactUrl: (runId: string, path: string) => string;
+  pml: [number, number, number];
+  setPml: (v: [number, number, number]) => void;
+  boundaryType: 'pml'|'pec'|'periodic'|'symmetry'|'impedance';
+  setBoundaryType: (v: 'pml'|'pec'|'periodic'|'symmetry'|'impedance') => void;
+  showProperties: boolean;
+  setShowProperties: (v: boolean) => void;
 }
 
 
@@ -118,6 +124,12 @@ const RunPanel: React.FC<RunPanelProps> = ({
   snapshotStride,
   setSnapshotStride,
   movieDt,
+  pml,
+  setPml,
+  boundaryType,
+  setBoundaryType,
+  showProperties,
+  setShowProperties,
   setMovieDt,
   movieStart,
   setMovieStart,
@@ -330,6 +342,32 @@ const RunPanel: React.FC<RunPanelProps> = ({
               <input value={meepPythonExecutable} onChange={handleMeepPythonChange} placeholder="/path/to/venv or python" />
             </label>
           )}
+
+          {/* Simulation settings (boundary, PML, quick access to material editor) */}
+          <div className="tool-section" style={{ marginTop: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Simulation settings</div>
+            <label>Boundary condition
+              <select value={boundaryType} onChange={e => setBoundaryType(e.target.value as any)}>
+                {(backendCapabilities?.boundary_types || ['pml']).map((b: string) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </label>
+            {boundaryType === 'pml' && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <label style={{ display: 'flex', flexDirection: 'column' }}>PML X
+                  <input type="number" value={pml[0]} onChange={e => setPml([Number(e.target.value) || 0, pml[1], pml[2]])} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column' }}>PML Y
+                  <input type="number" value={pml[1]} onChange={e => setPml([pml[0], Number(e.target.value) || 0, pml[2]])} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column' }}>PML Z
+                  <input type="number" value={pml[2]} onChange={e => setPml([pml[0], pml[1], Number(e.target.value) || 0])} />
+                </label>
+              </div>
+            )}
+            <div style={{ marginTop: 8 }}>
+              <button onClick={() => setShowProperties(true)}>Edit materials</button>
+            </div>
+          </div>
 
           {/* Backend options dynamic sub-panel */}
           {((backendCapabilities && Object.keys(backendCapabilities.capabilities || {}).length > 0) || backend === 'meep') && (

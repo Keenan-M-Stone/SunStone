@@ -516,6 +516,7 @@ function App() {
   >(null)
   const [resolution, setResolution] = useState(30)
   const [pml, setPml] = useState<[number, number, number]>(DEFAULT_PML)
+  const [boundaryType, setBoundaryType] = useState<'pml'|'pec'|'periodic'|'symmetry'|'impedance'>('pml')
   // Expose a test helper in development to trigger the Meep memory modal
   useEffect(() => {
     try {
@@ -6166,6 +6167,12 @@ function App() {
             livePreview={livePreview}
             setLivePreview={setLivePreview}
             snapshotStride={snapshotStride}
+            pml={pml}
+            setPml={setPml}
+            boundaryType={boundaryType}
+            setBoundaryType={setBoundaryType}
+            showProperties={showProperties}
+            setShowProperties={setShowProperties}
             setSnapshotStride={setSnapshotStride}
             movieDt={movieDt}
             setMovieDt={setMovieDt}

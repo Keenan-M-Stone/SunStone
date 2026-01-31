@@ -91,10 +91,66 @@ def submit_run(
     # Persist backend-specific options (if provided) to the run runtime so workers can use them
     # Basic validation against known capability schemas if available
     from .backends import CAPABILITIES as _CAPS  # local import to avoid circular issues
-    caps = _CAPS.get(backend, {}).get('capabilities', {})
+    caps = _CAPS.get(backend, {})
+    cap_opts = caps.get('capabilities', {})
+
+    # Validate run spec items (basic checks against backend declared capabilities)
+    # Use spec stored in the run directory (SubmitRunRequest does not include spec)
+    spec_path = run_dir / 'spec.json'
+    if spec_path.exists():
+        try:
+            spec = json.loads(spec_path.read_text())
+        except Exception:
+            spec = {}
+    else:
+        spec = {}
+    # boundary_conditions: list of {type, params}
+    if 'boundary_conditions' in spec:
+        bcs = spec.get('boundary_conditions')
+        # Allow either a single object (global BC) or a list of per-face BCs
+        allowed_bcs = caps.get('boundary_types', [])
+        if isinstance(bcs, dict):
+            if 'type' not in bcs:
+                raise HTTPException(status_code=400, detail='boundary_conditions object must have a "type"')
+            if bcs['type'] not in allowed_bcs:
+                raise HTTPException(status_code=400, detail=f'Boundary type "{bcs["type"]}" not supported by backend {backend}')
+        elif isinstance(bcs, list):
+            for i, bc in enumerate(bcs):
+                if not isinstance(bc, dict) or 'type' not in bc:
+                    raise HTTPException(status_code=400, detail=f'boundary_conditions[{i}] must be an object with a "type"')
+                if bc['type'] not in allowed_bcs:
+                    raise HTTPException(status_code=400, detail=f'Boundary type "{bc["type"]}" not supported by backend {backend}')
+        else:
+            raise HTTPException(status_code=400, detail='boundary_conditions must be an object or a list')
+
+    # materials: list of material definitions with required epsilon
+    if 'materials' in spec:
+        mats = spec.get('materials')
+        if not isinstance(mats, list):
+            raise HTTPException(status_code=400, detail='materials must be a list')
+        allowed_mat = caps.get('material_models', [])
+        for i, m in enumerate(mats):
+            if not isinstance(m, dict) or 'name' not in m or 'epsilon' not in m:
+                raise HTTPException(status_code=400, detail=f'materials[{i}] must have at least "name" and "epsilon"')
+            mtype = m.get('type', 'isotropic')
+            if mtype not in allowed_mat:
+                raise HTTPException(status_code=400, detail=f'Material "{m.get("name")}" type "{mtype}" not supported by backend {backend}')
+
+    # sources: list of source definitions
+    if 'sources' in spec:
+        srcs = spec.get('sources')
+        if not isinstance(srcs, list):
+            raise HTTPException(status_code=400, detail='sources must be a list')
+        allowed_src = caps.get('source_types', [])
+        for i, s in enumerate(srcs):
+            if not isinstance(s, dict) or 'type' not in s:
+                raise HTTPException(status_code=400, detail=f'sources[{i}] must be an object with a "type"')
+            if s['type'] not in allowed_src:
+                raise HTTPException(status_code=400, detail=f'Source type "{s["type"]}" not supported by backend {backend}')
+
     if req.backend_options is not None:
         for k, v in (req.backend_options or {}).items():
-            sch = caps.get(k)
+            sch = cap_opts.get(k)
             if sch is None:
                 raise HTTPException(status_code=400, detail=f"Unknown backend option: {k}")
             t = sch.get('type')
