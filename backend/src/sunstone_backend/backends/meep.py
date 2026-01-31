@@ -69,6 +69,9 @@ class MeepBackend(Backend):
 
         materials = normalize_materials(spec.get("materials", {}))
 
+        # Capture any fitted dispersion parameters for inclusion in outputs
+        fitted_dispersion: dict[str, dict] = {}
+
         def material_for(material_id: str):
             info = materials.get(material_id, {})
             model = str(info.get("model") or info.get("type") or "constant").lower()
@@ -81,22 +84,37 @@ class MeepBackend(Backend):
             except ValueError as e:
                 raise RuntimeError(f"Material '{material_id}' has unsupported eps: {e}")
 
-            # eps_parsed can be: float|complex or ("diag", (ex,ey,ez))
+            # eps_parsed can be: float|complex or ("diag", (ex,ey,ez)) or ("drude_approx", params)
             if isinstance(eps_parsed, tuple) and eps_parsed[0] == "diag":
                 ex, ey, ez = eps_parsed[1]
                 # Meep accepts anisotropic diagonal via epsilon_diag
                 return mp.Medium(epsilon_diag=(ex, ey, ez))
-            else:
-                # Meep's Simulation checks expect real-valued epsilons for direct
-                # constant-permittivity materials. If a complex constant was
-                # provided, raise a clear error instructing the user to use
-                # dispersive models (Drude/Lorentz) instead of a complex static eps.
-                if isinstance(eps_parsed, complex):
-                    raise RuntimeError(
-                        f"Material '{material_id}': complex-valued constant permittivity is not supported by Meep backend. "
-                        "Use a dispersive model (Drude/Lorentz) or other backend that accepts complex epsilon."
-                    )
-                return mp.Medium(epsilon=eps_parsed)
+
+            if isinstance(eps_parsed, tuple) and eps_parsed[0] == "drude_approx":
+                params = eps_parsed[1]
+                # record params for output
+                fitted_dispersion[material_id] = params
+                eps_inf = params.get("eps_inf", 1.0)
+                wp = params.get("wp")
+                gamma = params.get("gamma")
+                sigma = params.get("sigma")
+                # Create a Drude susceptibility if available in this meep build
+                try:
+                    suscept = mp.DrudeSusceptibility(frequency=0.0, gamma=gamma, sigma=sigma)
+                    return mp.Medium(epsilon=eps_inf, E_susceptibilities=[suscept])
+                except Exception:
+                    raise RuntimeError("Meep environment does not support Drude susceptibility for approximation")
+
+            # Meep's Simulation checks expect real-valued epsilons for direct
+            # constant-permittivity materials. If a complex constant was
+            # provided, raise a clear error instructing the user to use
+            # dispersive models (Drude/Lorentz) instead of a complex static eps.
+            if isinstance(eps_parsed, complex):
+                raise RuntimeError(
+                    f"Material '{material_id}': complex-valued constant permittivity is not supported by Meep backend. "
+                    "Use a dispersive model (Drude/Lorentz) or other backend that accepts complex epsilon."
+                )
+            return mp.Medium(epsilon=eps_parsed)
 
         geometry = []
         for geom in spec.get("geometry", []):
@@ -343,20 +361,20 @@ class MeepBackend(Backend):
                 writer.writeheader()
                 writer.writerows(rows)
 
-        (run_dir / "outputs" / "summary.json").write_text(
-            json.dumps(
-                {
-                    "backend": self.name,
-                    "dimension": dim,
-                    "notes": "Meep run completed.",
-                    "monitors": list(monitor_meta.keys()),
-                    "field_movie": bool(field_movie and dim == 2),
-                    "field_snapshot": bool(field_snapshot and dim == 2),
-                    "field_snapshot_json": bool(field_snapshot_json and dim == 2),
-                },
-                indent=2,
-            )
-        )
+        summary_obj = {
+            "backend": self.name,
+            "dimension": dim,
+            "notes": "Meep run completed.",
+            "monitors": list(monitor_meta.keys()),
+            "field_movie": bool(field_movie and dim == 2),
+            "field_snapshot": bool(field_snapshot and dim == 2),
+            "field_snapshot_json": bool(field_snapshot_json and dim == 2),
+        }
+        # Include any fitted dispersion parameters (material_id -> params)
+        if fitted_dispersion:
+            summary_obj["dispersion_fit"] = fitted_dispersion
+
+        (run_dir / "outputs" / "summary.json").write_text(json.dumps(summary_obj, indent=2))
 
         # If no JSON snapshot artifact was produced, write a minimal placeholder
         # so the frontend can display a basic live preview for testing.

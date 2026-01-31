@@ -218,6 +218,49 @@ Voxelization choices:
 - Lossy ε (complex constant) treated carefully (stability/passivity checks)
 - Dispersive models:
   - Drude/Lorentz via Meep dispersion features
+
+### Using approximate complex permittivity
+
+In some cases a user may have a complex-valued permittivity given at a
+single frequency (for example from measurements) but not a full dispersive
+model. SunStone supports an explicit *approximation* workflow to create a
+simple Drude dispersive model from such a value so backends like Meep can
+simulate the material.
+
+Spec fields (material record):
+
+- `eps`: either a scalar number, a dict `{ "real": <float>, "imag": <float> }`, or a string like "1.0-0.1j".
+- `approximate_complex`: optional boolean; if `true` the backend will attempt to produce a
+  simple Drude model approximation and run the backend with the approximate dispersive
+  parameters. This is a heuristic convenience only.
+- `dispersion_fit`: optional object to perform a higher-fidelity fit. Example:
+
+```json
+"material": {
+  "name": "Au_meas",
+  "eps": {"real": 2.1, "imag": -0.8},
+  "approximate_complex": true,
+  "dispersion_fit": {
+    "freqs": [3.0e14, 3.5e14, 4.0e14],
+    "eps_values": ["2.1-0.8j", "1.9-0.7j", "1.7-0.6j"]
+  }
+}
+```
+
+Notes:
+- The fitting routine uses a simple Levenberg-Marquardt-like solver to fit a
+  3-parameter Drude model (eps_inf, wp, gamma) to the provided spectrum. The
+  result is a heuristic approximation and should not be used as a replacement
+  for careful optical-model fitting.
+- If no `dispersion_fit` is provided, a single-frequency approximation will be
+  used. The user is encouraged to provide measured spectral points when
+  possible to improve fidelity.
+- When an approximation or fit is performed by a backend (e.g., Meep), the
+  fitted parameters will be written to `outputs/summary.json` under the key
+  `dispersion_fit` with a mapping of material IDs to parameter objects. This
+  allows users to inspect the fitted model used for the simulation.
+
+
 - Tensor ε (anisotropic)
 
 Validation (best-effort):
