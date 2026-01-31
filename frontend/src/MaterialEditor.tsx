@@ -66,9 +66,14 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
               {local.map((m, i) => (
                 <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 6, borderRadius: 6, background: i === editingIndex ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
                   <div style={{ width: 10, height: 24, background: m.color, borderRadius: 4 }} />
-                  <div style={{ flex: 1 }}>
-                    <div className="mono">{m.id}</div>
-                    <div className="muted">{m.label}</div>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div className="mono">{m.id}</div>
+                      <div className="muted">{m.label}</div>
+                    </div>
+                    {m.approximate_complex ? (
+                      <div style={{ background: '#2b6cb0', color: '#fff', padding: '2px 8px', borderRadius: 6, fontSize: 12 }}>Approximate</div>
+                    ) : null}
                   </div>
                   <div>
                     <button onClick={() => setEditingIndex(i)}>Edit</button>
@@ -122,9 +127,18 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
                         </div>
                       </div>
                     ) : m.model === 'isotropic' ? (
-                      <label>eps
-                        <input type="number" value={m.eps ?? 1} onChange={(e) => update(editingIndex, { eps: Number(e.target.value) })} />
-                      </label>
+                      <div>
+                        <label>eps
+                          <input type="number" value={m.eps ?? 1} onChange={(e) => update(editingIndex, { eps: Number(e.target.value) })} />
+                        </label>
+                        <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input type="checkbox" checked={!!m.approximate_complex} onChange={(e) => update(editingIndex, { approximate_complex: e.target.checked })} />
+                            <span className="muted">Approximate complex eps (Drude fit)</span>
+                          </label>
+                          <a href="/docs/foss-optics-fdtd-spec.md" target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>Docs</a>
+                        </div>
+                      </div>
                     ) : (
                       <div>
                         <div className="muted">Simple dispersion parameters</div>

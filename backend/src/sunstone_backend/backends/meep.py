@@ -373,6 +373,11 @@ class MeepBackend(Backend):
         # Include any fitted dispersion parameters (material_id -> params)
         if fitted_dispersion:
             summary_obj["dispersion_fit"] = fitted_dispersion
+            # Persist per-material dispersion artifacts for easy programmatic consumption
+            disp_dir = run_dir / "outputs" / "dispersion"
+            disp_dir.mkdir(parents=True, exist_ok=True)
+            for mat_id, params in fitted_dispersion.items():
+                (disp_dir / f"{mat_id}.json").write_text(json.dumps(params, indent=2))
 
         (run_dir / "outputs" / "summary.json").write_text(json.dumps(summary_obj, indent=2))
 

@@ -97,6 +97,12 @@ def list_dispersion(run_id: str, settings: Settings = Depends(get_settings)) -> 
     return out
 
 
+# IMPORTANT: define the explicit `zip` route before the wildcard per-material route below.
+# FastAPI matches routes in registration order; if the wildcard route
+# `/runs/{run_id}/dispersion/{material_id}` appears first then a request
+# to `/runs/{run_id}/dispersion/zip` will be captured as `material_id='zip'`
+# and will hit the wrong handler (resulting in a 404). Keep this specific
+# route above the wildcard to ensure it is matched first.
 @router.get("/runs/{run_id}/dispersion/zip")
 def download_dispersion_zip(run_id: str, settings: Settings = Depends(get_settings)):
     """Create and return a ZIP file containing all dispersion artifacts for a run."""

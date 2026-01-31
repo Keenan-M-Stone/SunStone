@@ -152,6 +152,10 @@ const RunPanel: React.FC<RunPanelProps> = ({
   const [showLog, setShowLog] = useState(false);
   const [logText, setLogText] = useState('');
 
+  // Dispersion viewer state
+  const [dispersionData, setDispersionData] = useState<Record<string, any> | null>(null)
+  const [selectedDispersion, setSelectedDispersion] = useState<string | null>(null)
+
   const openLog = async () => {
     setShowLog(true);
     setLogText('Loading...');
@@ -284,6 +288,67 @@ const RunPanel: React.FC<RunPanelProps> = ({
     } finally {
       setTranslating(false)
     }
+  }
+
+  // Simple inline Dispersion plot component
+  function DispersionPlot({ params }: { params: any }) {
+    // params: { eps_inf, wp, gamma }
+    const w = 360, h = 160, pad = 24
+    const freqs = Array.from({ length: 120 }).map((_, i) => 2e14 + (i * 4e14) / 119)
+    const omegas = freqs.map(f => 2 * Math.PI * f)
+    const eps_vals = omegas.map(omega => {
+      const eps_inf = Number(params?.eps_inf ?? 1.0)
+      const wp = Number(params?.wp ?? 0)
+      const gamma = Number(params?.gamma ?? 1e12)
+      const A = omega * omega
+      const B = gamma * omega
+      const denom_mag2 = A * A + B * B
+      const re = eps_inf - (wp * wp) * (A / denom_mag2)
+      const im = (wp * wp) * (B / denom_mag2)
+      return { re, im }
+    })
+    const re_vals = eps_vals.map(v => v.re)
+    const im_vals = eps_vals.map(v => v.im)
+    const minY = Math.min(...re_vals, ...im_vals)
+    const maxY = Math.max(...re_vals, ...im_vals)
+    const scaleY = (v: number) => pad + (h - 2 * pad) * (1 - (v - minY) / (maxY - minY || 1))
+    const scaleX = (i: number) => pad + (w - 2 * pad) * (i / (freqs.length - 1))
+
+    const linePath = (arr: number[]) => arr.map((v, i) => `${i===0?'M':'L'} ${scaleX(i)} ${scaleY(v)}`).join(' ')
+
+    // Hover tooltip state
+    const [hoverIdx, setHoverIdx] = React.useState<number | null>(null)
+
+    return (
+      <div style={{ position: 'relative' }}>
+        <svg width={w} height={h} style={{ background: '#080809', borderRadius: 6, display: 'block' }} onMouseMove={(ev) => {
+          const rect = (ev.target as SVGElement).getBoundingClientRect()
+          const x = ev.clientX - rect.left
+          // find closest index
+          const i = Math.round(((x - pad) / (w - 2 * pad)) * (freqs.length - 1))
+          if (i >= 0 && i < freqs.length) setHoverIdx(i)
+        }} onMouseLeave={() => setHoverIdx(null)}>
+          <rect x={0} y={0} width={w} height={h} fill="#080809" rx={6} />
+          <path d={linePath(re_vals)} stroke="#66d9ef" strokeWidth={1.5} fill="none" />
+          <path d={linePath(im_vals)} stroke="#f38ba8" strokeWidth={1.5} fill="none" />
+          <text x={pad} y={12} fill="#9aa6b2" style={{ fontSize: 11 }}>Real (teal) / Imag (pink) vs frequency</text>
+          {hoverIdx !== null && (
+            <g>
+              <line x1={scaleX(hoverIdx)} y1={pad} x2={scaleX(hoverIdx)} y2={h - pad} stroke="#445566" strokeWidth={1} strokeDasharray="3 3" />
+              <circle cx={scaleX(hoverIdx)} cy={scaleY(re_vals[hoverIdx])} r={3} fill="#66d9ef" />
+              <circle cx={scaleX(hoverIdx)} cy={scaleY(im_vals[hoverIdx])} r={3} fill="#f38ba8" />
+            </g>
+          )}
+        </svg>
+        {hoverIdx !== null && (
+          <div style={{ position: 'absolute', left: scaleX(hoverIdx) + 8, top: 8, background: '#0b0b10', color: '#e6eef6', padding: 6, borderRadius: 6, fontSize: 12, border: '1px solid #2b2b2b' }}>
+            <div><strong>f:</strong> {(freqs[hoverIdx]).toExponential(3)} Hz</div>
+            <div><strong>Re:</strong> {re_vals[hoverIdx].toFixed(4)}</div>
+            <div><strong>Im:</strong> {im_vals[hoverIdx].toFixed(4)}</div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   // Use native CSS resize behavior for vertical resizing (see .resizable in App.css)
@@ -534,6 +599,120 @@ const RunPanel: React.FC<RunPanelProps> = ({
               </div>
             </div>
           )}
+
+          {/* Dispersion fits viewer - tabbed preview + graph with download */}
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Dispersion fits</div>
+            <div style={{ color: '#9aa6b2', marginBottom: 8 }}>View fitted Drude parameters for this run (if available).</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button onClick={async () => {
+                if (!run || !run.id) { alert('No run selected'); return }
+                try {
+                  const res = await fetch(`/runs/${encodeURIComponent(run.id)}/dispersion`)
+                  if (!res.ok) { alert('No dispersion artifacts found for this run'); return }
+                  const data = await res.json()
+                  setDispersionData(data)
+                  setSelectedDispersion(Object.keys(data)[0] || null)
+                } catch (e) { alert('Failed to fetch dispersion: ' + String(e)) }
+              }}>Load dispersion</button>
+              <div className="muted">Click to load fitted dispersion parameters</div>
+            </div>
+
+            {dispersionData && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: 'flex', gap: 12 }}>
+
+                  {/* Material list */}
+                  <div style={{ minWidth: 220 }}>
+                    <div style={{ fontWeight: 600 }}>Materials</div>
+                    {Object.keys(dispersionData).length === 0 ? <div className="muted">No fitted materials</div> : (
+                      <div style={{ marginTop: 8 }}>
+                        {Object.keys(dispersionData).map(mid => (
+                          <div key={mid} style={{ padding: 6, borderRadius: 6, background: mid === selectedDispersion ? 'rgba(255,255,255,0.02)' : 'transparent', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ cursor: 'pointer' }} onClick={() => setSelectedDispersion(mid)}>
+                              <div style={{ fontWeight: 700 }}>{mid}</div>
+                              <div className="muted">{`eps_inf=${Number(dispersionData[mid].eps_inf).toFixed(2)}`}</div>
+                            </div>
+                            <div>
+                              <button onClick={async (e) => {
+                                e.stopPropagation()
+                                try {
+                                  const res = await fetch(`/runs/${encodeURIComponent(run.id)}/dispersion/${encodeURIComponent(mid)}`)
+                                  if (!res.ok) { alert('Failed to fetch artifact'); return }
+                                  const data = await res.json()
+                                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                                  const url = URL.createObjectURL(blob)
+                                  const a = document.createElement('a')
+                                  a.href = url
+                                  a.download = `${mid}-dispersion.json`
+                                  a.click()
+                                  URL.revokeObjectURL(url)
+                                } catch (e) { alert('Failed to download dispersion: ' + String(e)) }
+                              }}>Download</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right-hand tabbed area: Preview / Graph */}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <button onClick={() => setDispersionTab('preview')} disabled={dispersionTab === 'preview'}>Preview</button>
+                      <button onClick={() => setDispersionTab('graph')} disabled={dispersionTab === 'graph'}>Graph</button>
+                    </div>
+
+                    {selectedDispersion ? (
+                      <div>
+                        {dispersionTab === 'preview' ? (
+                          <div>
+                            <div style={{ fontWeight: 700 }}>{selectedDispersion}</div>
+                            <pre style={{ whiteSpace: 'pre-wrap', background: '#0b0b10', padding: 8 }}>{JSON.stringify(dispersionData[selectedDispersion], null, 2)}</pre>
+                            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                              <button onClick={async () => {
+                                try {
+                                  const res = await fetch(`/runs/${encodeURIComponent(run!.id)}/dispersion/${encodeURIComponent(selectedDispersion as string)}`)
+                                  if (!res.ok) { alert('Failed to fetch artifact'); return }
+                                  const data = await res.json()
+                                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                                  const url = URL.createObjectURL(blob)
+                                  const a = document.createElement('a')
+                                  a.href = url
+                                  a.download = `${selectedDispersion}-dispersion.json`
+                                  a.click()
+                                  URL.revokeObjectURL(url)
+                                } catch (e) { alert('Failed to download dispersion: ' + String(e)) }
+                              }}>Download JSON</button>
+
+                              <button onClick={async () => {
+                                // Download all dispersion artifacts as zip
+                                try {
+                                  const res = await fetch(`/runs/${encodeURIComponent(run!.id)}/dispersion/zip`)
+                                  if (!res.ok) { alert('Failed to download zip: ' + res.statusText); return }
+                                  const blob = await res.blob()
+                                  const url = URL.createObjectURL(blob)
+                                  const a = document.createElement('a')
+                                  a.href = url
+                                  a.download = `dispersion_run_${run!.id}.zip`
+                                  a.click()
+                                  URL.revokeObjectURL(url)
+                                } catch (e) { alert('Failed to download zip: ' + String(e)) }
+                              }}>Download all</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <DispersionPlot params={dispersionData[selectedDispersion]} />
+                          </div>
+                        )}
+                      </div>
+                    ) : <div className="muted">Select a material to view</div>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         <div style={{ minWidth: 220, flex: 1 }}>
           <label>Preview Component

@@ -257,8 +257,12 @@ Notes:
   possible to improve fidelity.
 - When an approximation or fit is performed by a backend (e.g., Meep), the
   fitted parameters will be written to `outputs/summary.json` under the key
-  `dispersion_fit` with a mapping of material IDs to parameter objects. This
-  allows users to inspect the fitted model used for the simulation.
+  `dispersion_fit` with a mapping of material IDs to parameter objects. In
+  addition, per-material artifacts will be written to `outputs/dispersion/<id>.json`
+  for easier machine consumption. This allows users and tools to inspect the
+  fitted model used for the simulation programmatically.
+- A convenience endpoint `GET /runs/{id}/dispersion/zip` returns a ZIP of all
+  dispersion artifacts for a run (useful for bulk download and archival).
 
 
 - Tensor ε (anisotropic)
