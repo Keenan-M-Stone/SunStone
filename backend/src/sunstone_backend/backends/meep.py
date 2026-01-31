@@ -7,6 +7,9 @@ from pathlib import Path
 
 from .base import Backend
 
+# Use shared normalization util
+from ..util.materials import normalize_materials
+
 
 class MeepBackend(Backend):
     """Experimental backend that runs a minimal Meep simulation.
@@ -64,15 +67,36 @@ class MeepBackend(Backend):
             pml_value = 0.0
         boundary_layers = [mp.PML(thickness=pml_value)] if pml_value > 0 else []
 
-        materials = spec.get("materials", {})
+        materials = normalize_materials(spec.get("materials", {}))
 
         def material_for(material_id: str):
             info = materials.get(material_id, {})
-            model = str(info.get("model", "constant")).lower()
+            model = str(info.get("model") or info.get("type") or "constant").lower()
             if model == "pec":
                 return mp.metal
-            eps = float(info.get("eps", 1.0))
-            return mp.Medium(epsilon=eps)
+            # Use parser to handle complex scalars and diagonal tensors.
+            from sunstone_backend.util.materials import parse_epsilon_for_meep
+            try:
+                eps_parsed = parse_epsilon_for_meep(info)
+            except ValueError as e:
+                raise RuntimeError(f"Material '{material_id}' has unsupported eps: {e}")
+
+            # eps_parsed can be: float|complex or ("diag", (ex,ey,ez))
+            if isinstance(eps_parsed, tuple) and eps_parsed[0] == "diag":
+                ex, ey, ez = eps_parsed[1]
+                # Meep accepts anisotropic diagonal via epsilon_diag
+                return mp.Medium(epsilon_diag=(ex, ey, ez))
+            else:
+                # Meep's Simulation checks expect real-valued epsilons for direct
+                # constant-permittivity materials. If a complex constant was
+                # provided, raise a clear error instructing the user to use
+                # dispersive models (Drude/Lorentz) instead of a complex static eps.
+                if isinstance(eps_parsed, complex):
+                    raise RuntimeError(
+                        f"Material '{material_id}': complex-valued constant permittivity is not supported by Meep backend. "
+                        "Use a dispersive model (Drude/Lorentz) or other backend that accepts complex epsilon."
+                    )
+                return mp.Medium(epsilon=eps_parsed)
 
         geometry = []
         for geom in spec.get("geometry", []):

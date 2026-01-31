@@ -15,6 +15,12 @@ class ScuffemBackend(Backend):
         consistent with other backends.
         """
         spec = json.loads((run_dir / "spec.json").read_text())
+        # Normalize materials (non-destructive) so backends can rely on a mapping
+        try:
+            from sunstone_backend.util.materials import normalize_materials
+            spec["materials"] = normalize_materials(spec.get("materials", {}))
+        except Exception:
+            pass
 
         out_dir = run_dir / "outputs"
         out_dir.mkdir(parents=True, exist_ok=True)

@@ -36,7 +36,11 @@ def translate_spec_to_ceviche(spec: dict[str, Any]) -> str:
         else:
             geometry.append({"shape": g.get("type", "unknown"), **g})
 
-    materials = spec.get("materials", {})
+    # Normalize materials into a mapping (name -> info) using shared util.
+    # Keep normalization non-destructive: complex/tensor structures are preserved.
+    from sunstone_backend.util.materials import normalize_materials
+
+    materials = normalize_materials(spec.get("materials", {}))
 
     payload = {
         "backend": "ceviche",

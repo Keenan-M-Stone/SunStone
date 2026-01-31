@@ -15,6 +15,12 @@ class OpalBackend(Backend):
         a placeholder artifact so the frontend can show something.
         """
         spec = json.loads((run_dir / "spec.json").read_text())
+        # Normalize materials (non-destructive) so backends can rely on a mapping
+        try:
+            from sunstone_backend.util.materials import normalize_materials
+            spec["materials"] = normalize_materials(spec.get("materials", {}))
+        except Exception:
+            pass
 
         # Create outputs dir
         out_dir = run_dir / "outputs"

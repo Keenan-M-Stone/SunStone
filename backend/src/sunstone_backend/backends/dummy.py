@@ -26,6 +26,12 @@ class DummyBackend(Backend):
 
     def run(self, run_dir: Path) -> None:
         spec = json.loads((run_dir / "spec.json").read_text())
+        # Normalize materials (non-destructive) so backends can rely on a mapping
+        try:
+            from sunstone_backend.util.materials import normalize_materials
+            spec["materials"] = normalize_materials(spec.get("materials", {}))
+        except Exception:
+            pass
 
         monitors = spec.get("monitors", [])
         point_monitors = [m for m in monitors if m.get("type") == "point"]

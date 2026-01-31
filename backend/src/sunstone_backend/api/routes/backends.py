@@ -36,7 +36,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
             "max_time": {"type": "number", "min": 0.0, "default": 200, "label": "Max time"},
         },
         "boundary_types": ["pml","pec","periodic","symmetry","impedance"],
-        "material_models": ["isotropic","anisotropic","drude","lorentz"],
+        "material_models": ["isotropic","anisotropic","drude","lorentz","pec"],
         "source_types": ["gaussian_pulse","toneburst","plane_wave","dipole"],
         "detector_types": ["time_probe","fft_probe","power_integral","s_parameter"],
         "schemas": BACKEND_SCHEMAS,

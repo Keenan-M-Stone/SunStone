@@ -123,18 +123,40 @@ def submit_run(
         else:
             raise HTTPException(status_code=400, detail='boundary_conditions must be an object or a list')
 
-    # materials: list of material definitions with required epsilon
+    # materials: accept either dict mapping (bundle style) or list of material definitions
     if 'materials' in spec:
-        mats = spec.get('materials')
-        if not isinstance(mats, list):
-            raise HTTPException(status_code=400, detail='materials must be a list')
+        # Normalize to a mapping name -> info using shared util (non-destructive)
+        try:
+            from sunstone_backend.util.materials import normalize_materials as _normalize_materials
+            materials_map = _normalize_materials(spec.get('materials'))
+        except Exception:
+            raise HTTPException(status_code=400, detail='materials must be an object or a list')
+
+        # Build lightweight entries for validation without coercing values
+        normalized_entries: list[dict] = []
+        for name, info in materials_map.items():
+            if not isinstance(info, dict):
+                raise HTTPException(status_code=400, detail=f'materials["{name}"] must be an object')
+            model = str(info.get('model') or info.get('type') or '').lower()
+            mtype = 'isotropic' if model in ('', 'constant', 'isotropic') else model
+            normalized_entries.append({'name': name, 'type': mtype})
+
+        # Validate material models against backend capabilities
         allowed_mat = caps.get('material_models', [])
-        for i, m in enumerate(mats):
-            if not isinstance(m, dict) or 'name' not in m or 'epsilon' not in m:
-                raise HTTPException(status_code=400, detail=f'materials[{i}] must have at least "name" and "epsilon"')
+        for m in normalized_entries:
             mtype = m.get('type', 'isotropic')
             if mtype not in allowed_mat:
                 raise HTTPException(status_code=400, detail=f'Material "{m.get("name")}" type "{mtype}" not supported by backend {backend}')
+
+        # Persist normalized (mapping) materials back into the run's spec.json so workers
+        # always receive a consistent mapping representation. This write is non-destructive
+        # because normalize_materials only renames keys and copies values; complex
+        # structures are preserved.
+        spec['materials'] = materials_map
+        try:
+            spec_path.write_text(json.dumps(spec, indent=2))
+        except Exception:
+            raise HTTPException(status_code=500, detail='Failed to persist normalized materials to run spec')
 
     # sources: list of source definitions
     if 'sources' in spec:
