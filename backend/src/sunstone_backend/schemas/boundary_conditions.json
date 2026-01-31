@@ -5,6 +5,7 @@
   "description": "Schema for specifying boundary conditions per face/axis in run specs",
   "type": "object",
   "properties": {
+    "face": {"type": "string", "enum": ["px","nx","py","ny","pz","nz"], "description": "Face identifier (px=+x, nx=-x, etc)"},
     "type": {"type": "string", "enum": ["pml", "periodic", "pec", "pmc", "impedance", "symmetry"], "description": "Type of boundary condition"},
     "params": {"type": "object", "description": "Optional parameters specific to the BC type"}
   },

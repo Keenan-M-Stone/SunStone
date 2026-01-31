@@ -71,10 +71,7 @@ hr {
 }
 
 .settings-menu {
-  position: absolute;
-  right: 0;
-  top: 0;
-  z-index: 200;
+  position: relative;
 }
 .settings-panel {
   right: 0;
@@ -798,9 +795,19 @@ button.primary {
   overflow: auto;
   padding: 8px 10px;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
+
+}
+
+/* Hide CAD canvas when the hide-cad class is set on the root (.app) */
+.hide-cad .panel.canvas {
+  display: none;
+}
+
+/* Adjust layout to allow Run panel to occupy visible space */
+.hide-cad .workspace {
+  grid-template-areas:
+    "tools run props"
+    "tools run props";
 }
 
 .action-log-row {

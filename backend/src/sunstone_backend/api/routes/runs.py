@@ -120,6 +120,9 @@ def submit_run(
                     raise HTTPException(status_code=400, detail=f'boundary_conditions[{i}] must be an object with a "type"')
                 if bc['type'] not in allowed_bcs:
                     raise HTTPException(status_code=400, detail=f'Boundary type "{bc["type"]}" not supported by backend {backend}')
+                # Optional face validation
+                if 'face' in bc and bc['face'] not in ('px','nx','py','ny','pz','nz'):
+                    raise HTTPException(status_code=400, detail=f'boundary_conditions[{i}].face must be one of px,nx,py,ny,pz,nz')
         else:
             raise HTTPException(status_code=400, detail='boundary_conditions must be an object or a list')
 

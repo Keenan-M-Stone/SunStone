@@ -9,6 +9,8 @@ def translate_spec_to_ceviche(spec: dict[str, Any]) -> str:
 
     This is intentionally simple: it maps domain, geometry, and materials into a
     solver-friendly structure suitable for initial integration and tests.
+    The translator conservatively reports boundary parsing results and emits
+    warnings for conditions that Ceviche cannot represent directly (e.g., PML).
     """
     domain = spec.get("domain", {})
     geometry = []
@@ -42,6 +44,16 @@ def translate_spec_to_ceviche(spec: dict[str, Any]) -> str:
 
     materials = normalize_materials(spec.get("materials", {}))
 
+    # Parse boundary conditions using the shared parser (pure-data parser in meep module).
+    from sunstone_backend.backends.meep import parse_boundary_conditions
+
+    pmls, bcs = parse_boundary_conditions(spec.get("boundary_conditions", []))
+    warnings: list[str] = []
+    # Ceviche is a spectral solver that does not use spatial-domain PMLs in the
+    # same way an FDTD solver does — report PMLs as ignored.
+    if pmls:
+        warnings.append("PML boundary conditions are not supported by Ceviche and will be ignored.")
+
     payload = {
         "backend": "ceviche",
         "domain": {
@@ -51,7 +63,9 @@ def translate_spec_to_ceviche(spec: dict[str, Any]) -> str:
         },
         "geometry": geometry,
         "materials": materials,
+        "boundaries": {"pml_specs": pmls, "other": bcs},
         "meta": {"translated_by": "sunstone-ceviche-translator", "version": "0.1"},
+        "warnings": warnings,
     }
     return json.dumps(payload, indent=2)
 

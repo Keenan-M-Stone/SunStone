@@ -11,6 +11,69 @@ from .base import Backend
 from ..util.materials import normalize_materials
 
 
+def parse_boundary_conditions(bc_spec):
+    """Return (pml_specs, boundary_specs).
+
+    - pml_specs: list of dicts: {"direction": "X"/"Y"/"Z"/"ALL", "side": "High"/"Low"/"Both", "thickness": float}
+    - boundary_specs: list of dicts: {"direction": "X"/"Y"/"Z", "side": "High"/"Low", "type": "pec"/"pmc"/..., "params": {...}}
+
+    This is a pure-data parser so it can be tested without importing Meep.
+    """
+    pmls = []
+    bcs = []
+    # Legacy single pml_thickness support
+    if isinstance(bc_spec, dict):
+        pml_thickness = bc_spec.get("pml_thickness", None)
+        if pml_thickness is not None:
+            # pml_thickness may be scalar or list
+            try:
+                if isinstance(pml_thickness, (list, tuple)):
+                    vals = [float(v) for v in pml_thickness]
+                    dirs = ["X", "Y", "Z"]
+                    for d, v in zip(dirs, vals):
+                        if float(v) > 0:
+                            pmls.append({"direction": d, "side": "Both", "thickness": float(v)})
+                else:
+                    v = float(pml_thickness)
+                    if v > 0:
+                        pmls.append({"direction": "ALL", "side": "Both", "thickness": v})
+            except Exception:
+                pass
+        return pmls, bcs
+
+    # Per-face list support
+    if isinstance(bc_spec, list):
+        face_map = {"px": ("X", "High"), "nx": ("X", "Low"),
+                    "py": ("Y", "High"), "ny": ("Y", "Low"),
+                    "pz": ("Z", "High"), "nz": ("Z", "Low")}
+        for entry in bc_spec:
+            try:
+                f = entry.get("face")
+                typ = entry.get("type")
+                params = entry.get("params", {}) or {}
+                if typ == "pml":
+                    thickness = params.get("pml_thickness") or params.get("thickness")
+                    try:
+                        t = float(thickness)
+                    except Exception:
+                        t = 0.0
+                    if t > 0:
+                        if f in face_map:
+                            dirn, side = face_map[f]
+                            pmls.append({"direction": dirn, "side": side, "thickness": t})
+                        else:
+                            pmls.append({"direction": "ALL", "side": "Both", "thickness": t})
+                else:
+                    if f in face_map:
+                        dirn, side = face_map[f]
+                        bcs.append({"direction": dirn, "side": side, "type": typ, "params": params})
+                    else:
+                        bcs.append({"direction": "ALL", "side": "Both", "type": typ, "params": params})
+            except Exception:
+                continue
+    return pmls, bcs
+
+
 class MeepBackend(Backend):
     """Experimental backend that runs a minimal Meep simulation.
 
@@ -60,12 +123,27 @@ class MeepBackend(Backend):
         cell = mp.Vector3(*cell_size)
 
         bc = spec.get("boundary_conditions", {})
-        pml_thickness = bc.get("pml_thickness", [0.0, 0.0, 0.0])
+
+        # Parse boundary conditions using a shared pure-data helper
+        pml_specs, perface_bcs = parse_boundary_conditions(bc)
+
+        # Convert pml_specs to meep.PML objects when possible
+        boundary_layers = []
         try:
-            pml_value = max(float(v) for v in pml_thickness)
+            # mp may not be imported yet here; we'll build minimal PML specs and convert once mp is available
+            # If the legacy ALL case exists, prefer that as single PML
+            all_pml = next((p for p in pml_specs if p.get("direction") == "ALL"), None)
+            if all_pml:
+                boundary_layers = [mp.PML(thickness=all_pml["thickness"])] if all_pml["thickness"] > 0 else []
+            else:
+                for p in pml_specs:
+                    dir_const = getattr(mp, p["direction"], None)
+                    side_const = getattr(mp, p["side"], None)
+                    if dir_const is not None and side_const is not None and float(p["thickness"]) > 0:
+                        boundary_layers.append(mp.PML(thickness=float(p["thickness"]), direction=dir_const, side=side_const))
         except Exception:
-            pml_value = 0.0
-        boundary_layers = [mp.PML(thickness=pml_value)] if pml_value > 0 else []
+            # If mp not importable here, leave boundary_layers empty; will convert after mp import below
+            boundary_layers = []
 
         materials = normalize_materials(spec.get("materials", {}))
 
@@ -180,6 +258,30 @@ class MeepBackend(Backend):
             geometry=geometry,
             sources=sources,
         )
+
+        # Apply per-face (non-PML) boundary conditions where supported by Meep
+        for bc_item in perface_bcs:
+            try:
+                dir_const = getattr(mp, bc_item["direction"], None)
+                side_const = getattr(mp, bc_item["side"], None)
+                typ = bc_item.get("type")
+                if typ == "pec":
+                    cond = getattr(mp, "Metallic", None)
+                elif typ == "pmc":
+                    cond = getattr(mp, "Magnetic", None)
+                elif typ == "periodic":
+                    logger.warning("Per-face 'periodic' boundary requested; Meep requires paired periodic faces (use k_point) — ignoring per-face periodic setting")
+                    continue
+                else:
+                    logger.warning(f"Unsupported boundary type '{typ}' for Meep backend; ignoring")
+                    continue
+                if dir_const is not None and side_const is not None and cond is not None:
+                    try:
+                        sim.set_boundary(side_const, dir_const, cond)
+                    except Exception as e:
+                        logger.warning(f"Failed to set boundary {bc_item}: {e}")
+            except Exception as e:
+                logger.warning(f"Error applying per-face boundary {bc_item}: {e}")
 
         run_control = spec.get("run_control", {})
         max_time = float(run_control.get("max_time", 200))

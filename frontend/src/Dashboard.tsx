@@ -53,7 +53,7 @@ const Dashboard: React.FC<DashboardProps> = ({ runId }) => {
       }
       return;
     }
-    resourceTimer.current = setInterval(async () => {
+    resourceTimer.current = window.setInterval(async () => {
       // Prefer metrics API if available
       const dataArr = await getRunMetrics(runId) || await getResourceUsage(runId);
       const data = Array.isArray(dataArr) && dataArr.length > 0 ? dataArr[dataArr.length - 1] : null;

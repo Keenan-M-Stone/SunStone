@@ -111,6 +111,7 @@ type SourceItem = {
   type?: string
   waveformId?: string
   metadata?: Record<string, unknown>
+  orientation?: number
 }
 
 type MonitorItem = {
@@ -119,6 +120,7 @@ type MonitorItem = {
   z: number
   components: Array<'Ex' | 'Ey' | 'Ez'>
   dt: number
+  orientation?: number
 }
 
 type ActiveTool =
@@ -522,6 +524,16 @@ function App() {
   const [resolution, setResolution] = useState(30)
   const [pml, setPml] = useState<[number, number, number]>(DEFAULT_PML)
   const [boundaryType, setBoundaryType] = useState<'pml'|'pec'|'periodic'|'symmetry'|'impedance'>('pml')
+  // Per-face boundary configuration: faces are px,nx,py,ny,pz,nz
+  const [boundaryPerFace, setBoundaryPerFace] = useState(false)
+  const [boundaryFaces, setBoundaryFaces] = useState<Record<string, { type: string; thickness?: number }>>(() => ({
+    px: { type: 'pml', thickness: pml[0] },
+    nx: { type: 'pml', thickness: pml[0] },
+    py: { type: 'pml', thickness: pml[1] },
+    ny: { type: 'pml', thickness: pml[1] },
+    pz: { type: 'pml', thickness: pml[2] },
+    nz: { type: 'pml', thickness: pml[2] },
+  }))
   // Expose a test helper in development to trigger the Meep memory modal
   useEffect(() => {
     try {
@@ -694,6 +706,9 @@ function App() {
     setTranslationPreviews((m) => ({ ...m, [name]: text ?? '' }))
   }
 
+  // Warnings discovered while loading specs/bundles
+  const [specWarnings, setSpecWarnings] = useState<string[] | null>(null)
+
   // Fetch backend capabilities when backend selection changes so UI can show dynamic controls
   useEffect(() => {
     let cancelled = false
@@ -724,11 +739,16 @@ function App() {
   const [snapshotEnabled, setSnapshotEnabled] = useState(true)
   const [snapshotStride, setSnapshotStride] = useState(4)
   const [previewComponent, setPreviewComponent] = useState<'Ez' | 'Ex' | 'Ey' | 'Hz' | 'Hx' | 'Hy'>('Ez')
-  const [previewPalette, setPreviewPalette] = useState<'viridis' | 'jet' | 'gray'>('viridis')
+  const [previewPalette, setPreviewPalette] = useState<'viridis' | 'jet' | 'gray' | 'lava'>('viridis')
   const [livePreview, setLivePreview] = useState(false)
-  const [previewField, setPreviewField] = useState<
-    { width: number; height: number; data: number[]; min: number; max: number; component: string } | null
-  >(null)
+  const [hideCad, setHideCad] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem('sunstone.hideCad')
+      return raw === 'true'
+    } catch (err) {
+      return false
+    }
+  })
 
   const [logs, setLogs] = useState('')
   const [artifacts, setArtifacts] = useState<ArtifactEntry[]>([])
@@ -745,10 +765,24 @@ function App() {
   useEffect(() => {
     if (workspaceMode === 'cad') {
       setShowRunPanel(false)
+      setHideCad(false)
       return
     }
+    // any non-cad workspace mode (e.g., 'fdtd') should hide the CAD canvas and show the Run Panel
+    setHideCad(true)
     setShowRunPanel(true)
   }, [workspaceMode])
+
+  useEffect(() => {
+    if (hideCad) {
+      setShowRunPanel(true)
+    }
+    try {
+      window.localStorage.setItem('sunstone.hideCad', hideCad ? 'true' : 'false')
+    } catch (err) {
+      // ignore
+    }
+  }, [hideCad])
 
   useEffect(() => {
     if (dimension === '2d') {
@@ -1441,47 +1475,7 @@ function App() {
     })
   }, [dimension, geometry, sources, monitors, materials, cellSize])
 
-  useEffect(() => {
-    let timer: number | null = null
-    let active = true
-
-    async function pollPreview() {
-      if (!livePreview || !run?.id) return
-      try {
-        const list = await getArtifacts(run.id)
-        const entry = list.find((a) => a.path.endsWith('outputs/fields/field_snapshot.json'))
-        if (!entry) return
-        const res = await fetch(downloadArtifactUrl(run.id, entry.path))
-        if (!res.ok) return
-        const payload = await res.json()
-        if (!active) return
-        if (payload?.data && payload?.width && payload?.height) {
-          setPreviewField({
-            width: payload.width,
-            height: payload.height,
-            data: payload.data,
-            min: payload.min ?? Math.min(...payload.data),
-            max: payload.max ?? Math.max(...payload.data),
-            component: payload.component ?? 'Ez',
-          })
-        }
-      } catch (err) {
-        console.warn('Preview poll failed', err)
-      }
-    }
-
-    if (livePreview) {
-      pollPreview()
-      timer = window.setInterval(pollPreview, 3000)
-    } else {
-      setPreviewField(null)
-    }
-
-    return () => {
-      active = false
-      if (timer) window.clearInterval(timer)
-    }
-  }, [livePreview, run?.id])
+  // Preview polling moved to `ResultsPanel` (no canvas overlay polling in App.tsx).
 
   useEffect(() => {
     function isEditableTarget(target: EventTarget | null) {
@@ -1674,6 +1668,9 @@ function App() {
     return Math.max(sceneUnitsPerPx * displayFontPt, 6)
   }, [overlayAutoscale, markerScene, displayFontPt, sceneUnitsPerPx])
 
+// MarkerOrientation component
+import MarkerOrientation from './MarkerOrientation'
+
   const snapDistanceWorld = useMemo(() => {
     if (!snapEnabled) return 0
     const w = viewSize[0]
@@ -1685,7 +1682,12 @@ function App() {
       version: '0.1',
       units: { length: 'm', time: 's', frequency: 'Hz' },
       domain: { cell_size: specCellSize, resolution, symmetry: [], dimension },
-      boundary_conditions: { type: 'pml', pml_thickness: pml },
+      boundary_conditions: (boundaryPerFace) ? Object.values(boundaryFaces).map((f, idx) => {
+        // map faces in order [px,nx,py,ny,pz,nz] with explicit face labels
+        const faces = ['px','nx','py','ny','pz','nz']
+        const face = faces[idx]
+        return { face, type: f.type, params: f.type === 'pml' ? { pml_thickness: f.thickness ?? 0 } : (f as any).params ?? {} }
+      }) : { type: 'pml', pml_thickness: pml },
       materials: materialsMap,
       geometry: geometry.filter((g) => g.shape === 'block' || g.shape === 'cylinder').map((g) => {
         if (g.shape === 'block') {
@@ -3165,6 +3167,11 @@ function App() {
     downloadJson({ materials }, 'materials.json')
   }
 
+  // Expose import/export helpers on window for quick actions in other components
+  // Previously exposed import/export helpers on window for quick actions in other components.
+  // These are intentionally not exposed now — materials are managed from the Properties panel.
+
+
   function exportSources() {
     downloadJson({ sources }, 'sources.json')
   }
@@ -3291,12 +3298,12 @@ function App() {
 
   function normalizeSources(items: SourceItem[] | undefined) {
     if (!items) return []
-    return items.map((s) => ({ ...s, z: Number.isFinite(s.z) ? s.z : 0 }))
+    return items.map((s) => ({ ...s, z: Number.isFinite(s.z) ? s.z : 0, orientation: Number.isFinite((s as any).orientation) ? (s as any).orientation : 0 }))
   }
 
   function normalizeMonitors(items: MonitorItem[] | undefined) {
     if (!items) return []
-    return items.map((m) => ({ ...m, z: Number.isFinite(m.z) ? m.z : 0 }))
+    return items.map((m) => ({ ...m, z: Number.isFinite(m.z) ? m.z : 0, orientation: Number.isFinite((m as any).orientation) ? (m as any).orientation : 0 }))
   }
 
   function applyBundle(payload: any) {
@@ -3351,6 +3358,25 @@ function App() {
     }
     if (cad?.view?.zoom) setZoom(Number(cad.view.zoom))
     if (cad?.view?.background) setBackgroundColor(String(cad.view.background))
+
+    // If bundle specifies per-face boundary conditions, mirror them into UI state and warn if backend doesn't support it
+    const bcs = payload?.boundary_conditions || spec?.boundary_conditions || cad?.boundary_conditions
+    if (Array.isArray(bcs) && bcs.some(b => b && typeof b === 'object' && 'face' in b)) {
+      setBoundaryPerFace(true)
+      const faceOrder = ['px','nx','py','ny','pz','nz']
+      const next: Record<string, any> = { ...boundaryFaces }
+      bcs.forEach((bc:any) => {
+        if (bc && bc.face && faceOrder.includes(bc.face)) {
+          next[bc.face] = { type: bc.type, thickness: bc.params?.pml_thickness ?? next[bc.face]?.thickness }
+        }
+      })
+      setBoundaryFaces(next)
+      // show a warning if current backend doesn't support per-face boundaries
+      const caps = currentBackendCapabilities || {}
+      if (!caps?.per_face_boundary) {
+        try { setSpecWarnings((w) => ([...(w||[]), 'Per-face boundary settings present in spec; backend may not honor per-face differences'])) } catch (e) {}
+      }
+    }
   }
 
   function openImport(kind: ImportKind) {
@@ -3563,7 +3589,7 @@ function App() {
     !!project && project.name.trim().toLowerCase() === projectName.trim().toLowerCase()
 
   return (
-    <div className="app">
+    <div className={`app ${hideCad ? 'hide-cad' : ''}`}> 
       {resourceError && (
         <div style={{position:'fixed',top:0,left:0,right:0,zIndex:2000,background:'#b00',color:'#fff',padding:12}}>
           <b>Resource Monitor Error:</b> {resourceError}
@@ -3573,6 +3599,10 @@ function App() {
         <div>
           <div className="title">SunStone</div>
           <div className="subtitle">Local control plane demo (API: {apiBaseUrl})</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={() => setHideCad((v) => !v)} className={hideCad ? 'primary' : ''}>{hideCad ? 'Show CAD' : 'Hide CAD'}</button>
+          <div className="muted">{hideCad ? 'CAD hidden' : 'CAD visible'}</div>
         </div>
 
       {captureDataUrl && (
@@ -3839,11 +3869,7 @@ function App() {
             <div className="k">Active</div>
             <div className="v mono">{project ? `${project.name} (${project.id})` : '—'}</div>
           </div>
-          {!process.env.NODE_ENV || process.env.NODE_ENV === 'development' ? (
-            <div style={{ marginTop: 8 }}>
-              <button onClick={() => setShowMeepMemoryPrompt(true)} style={{ fontSize: 12 }}>Trigger Meep Memory Modal (dev)</button>
-            </div>
-          ) : null}
+          {/* dev-only: Meep memory modal trigger removed from Tools panel to declutter UI */}
           {(busy || error) && (
             <div className="field">
               {busy && <div className="muted">{busy}</div>}
@@ -3855,8 +3881,8 @@ function App() {
           <label>
             Mode
             <select value={workspaceMode} onChange={(e) => setWorkspaceMode(e.target.value as WorkspaceMode)}>
-              <option value="cad">CAD Modeling</option>
-              <option value="fdtd">FDTD Run</option>
+              <option value="cad">CAD</option>
+              <option value="fdtd">EM</option>
             </select>
           </label>
           <label>
@@ -4064,50 +4090,7 @@ function App() {
               }}
             />
           </div>
-          <div className="field">
-            <label>PML thickness (x, y, z) ({displayUnits === 'um' ? 'µm' : displayUnits})</label>
-            <div className="row">
-              <input
-                type="number"
-                value={toDisplayLength(pml[0], displayUnits)}
-                step={1e-7 * displayScale}
-                onChange={(e) => {
-                  const v = e.currentTarget.valueAsNumber
-                  setPml([
-                    Number.isFinite(v) ? fromDisplayLength(v, displayUnits) : pml[0],
-                    pml[1],
-                    pml[2],
-                  ])
-                }}
-              />
-              <input
-                type="number"
-                value={toDisplayLength(pml[1], displayUnits)}
-                step={1e-7 * displayScale}
-                onChange={(e) => {
-                  const v = e.currentTarget.valueAsNumber
-                  setPml([
-                    pml[0],
-                    Number.isFinite(v) ? fromDisplayLength(v, displayUnits) : pml[1],
-                    pml[2],
-                  ])
-                }}
-              />
-              <input
-                type="number"
-                value={toDisplayLength(pml[2], displayUnits)}
-                step={1e-7 * displayScale}
-                onChange={(e) => {
-                  const v = e.currentTarget.valueAsNumber
-                  setPml([
-                    pml[0],
-                    pml[1],
-                    Number.isFinite(v) ? fromDisplayLength(v, displayUnits) : pml[2],
-                  ])
-                }}
-              />
-            </div>
-          </div>
+          {/* PML thickness is backend-dependent and hidden from Tools to reduce clutter. */}
           </section>
         )}
 
@@ -4670,40 +4653,7 @@ function App() {
                 )
               })()}
 
-              {previewField && (
-                <g opacity={0.75}>
-                  {(() => {
-                    const w = previewField.width
-                    const h = previewField.height
-                    const data = previewField.data
-                    const min = previewField.min
-                    const max = previewField.max
-                    const span = max - min || 1
-                    const dx = safeCellSizeScene[0] / w
-                    const dy = safeCellSizeScene[1] / h
-                    const x0 = -safeCellSizeScene[0] / 2
-                    const y0 = -safeCellSizeScene[1] / 2
-                    const rects = [] as JSX.Element[]
-                    for (let j = 0; j < h; j += 1) {
-                      for (let i = 0; i < w; i += 1) {
-                        const idx = j * w + i
-                        const v = (data[idx] - min) / span
-                        rects.push(
-                          <rect
-                            key={`pf-${i}-${j}`}
-                            x={x0 + i * dx}
-                            y={y0 + j * dy}
-                            width={dx}
-                            height={dy}
-                            fill={paletteColor(previewPalette, v)}
-                          />,
-                        )
-                      }
-                    }
-                    return rects
-                  })()}
-                </g>
-              )}
+              {/* Preview overlay removed; use the ResultsPanel for live detector views. */}
 
               {measureStart && measureEnd && Number.isFinite(measureStart[0]) && Number.isFinite(measureStart[1]) && Number.isFinite(measureEnd[0]) && Number.isFinite(measureEnd[1]) && (
                 <g>
@@ -5562,6 +5512,10 @@ function App() {
                     vectorEffect={overlayAutoscale ? undefined : 'non-scaling-stroke'}
                   />
                 )}
+                {/* orientation arrow */}
+                {typeof s.orientation === 'number' && (
+                  <MarkerOrientation cx={toScene(s.position[0])} cy={toScene(s.position[1])} ang={s.orientation ?? 0} len={size * 1.8} headSize={overlayHandleRadius} color="rgba(245,158,11,0.95)" strokeWidth={overlayStrokeWidth} vectorEffect={overlayAutoscale ? undefined : 'non-scaling-stroke'} />
+                )}
               </g>
             ))}
 
@@ -5628,6 +5582,9 @@ function App() {
                     strokeWidth={overlayStrokeWidth}
                     vectorEffect={overlayAutoscale ? undefined : 'non-scaling-stroke'}
                   />
+                )}
+                {typeof m.orientation === 'number' && (
+                  <MarkerOrientation cx={toScene(m.position[0])} cy={toScene(m.position[1])} ang={m.orientation ?? 0} len={size * 1.9} headSize={overlayHandleRadius} color="rgba(45,212,191,0.95)" strokeWidth={overlayStrokeWidth} vectorEffect={overlayAutoscale ? undefined : 'non-scaling-stroke'} />
                 )}
               </g>
             ))}
@@ -6017,6 +5974,19 @@ function App() {
                           />
                         </div>
                       </label>
+                      <label>
+                        Orientation (deg)
+                        <input
+                          type="number"
+                          value={((s.orientation ?? 0) * 180) / Math.PI}
+                          step="1"
+                          onChange={(e) => {
+                            const deg = e.currentTarget.valueAsNumber
+                            const rad = Number.isFinite(deg) ? (deg * Math.PI) / 180 : 0
+                            updateSource(s.id, { orientation: rad })
+                          }}
+                        />
+                      </label> 
                       {dimension === '3d' && (
                         <label>
                           Position (z)
@@ -6154,6 +6124,19 @@ function App() {
                           }}
                         />
                       </label>
+                      <label>
+                        Orientation (deg)
+                        <input
+                          type="number"
+                          value={((m.orientation ?? 0) * 180) / Math.PI}
+                          step="1"
+                          onChange={(e) => {
+                            const deg = e.currentTarget.valueAsNumber
+                            const rad = Number.isFinite(deg) ? (deg * Math.PI) / 180 : 0
+                            updateMonitor(m.id, { orientation: rad })
+                          }}
+                        />
+                      </label>
                     </div>
                   ))}
               </div>
@@ -6198,8 +6181,15 @@ function App() {
             snapshotStride={snapshotStride}
             pml={pml}
             setPml={setPml}
+            hideCad={hideCad}
+            setHideCad={setHideCad}
             boundaryType={boundaryType}
             setBoundaryType={setBoundaryType}
+            boundaryPerFace={boundaryPerFace}
+            setBoundaryPerFace={setBoundaryPerFace}
+            boundaryFaces={boundaryFaces}
+            setBoundaryFaces={setBoundaryFaces}
+            specWarnings={specWarnings}
             showProperties={showProperties}
             setShowProperties={setShowProperties}
             setSnapshotStride={setSnapshotStride}

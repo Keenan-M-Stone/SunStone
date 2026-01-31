@@ -22,6 +22,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "supports_translation": False,
         "capabilities": {},
         "boundary_types": ["pml","pec","periodic","symmetry","impedance"],
+        "per_face_boundary": False,
         "material_models": ["isotropic"],
         "source_types": ["toneburst","gaussian_pulse"],
         "detector_types": ["time_probe","power_integral"],
@@ -36,6 +37,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
             "max_time": {"type": "number", "min": 0.0, "default": 200, "label": "Max time"},
         },
         "boundary_types": ["pml","pec","periodic","symmetry","impedance"],
+        "per_face_boundary": True,
         "material_models": ["isotropic","anisotropic","drude","lorentz","pec"],
         "source_types": ["gaussian_pulse","toneburst","plane_wave","dipole"],
         "detector_types": ["time_probe","fft_probe","power_integral","s_parameter"],
@@ -54,6 +56,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         },
         "ui": {"groups": [["mode", "resolution"], ["wavelength_start", "wavelength_stop", "wavelength_points"]], "advanced": []},
         "boundary_types": ["pec","periodic"],
+        "per_face_boundary": False,
         "material_models": ["isotropic","anisotropic"],
         "source_types": ["plane_wave","toneburst"],
         "detector_types": ["fft_probe","s_parameter"],
@@ -139,11 +142,22 @@ def translate_backend(name: str, spec: dict[str, Any]) -> dict[str, Any]:
                 payload = json.loads(out)
             except Exception:
                 payload = out
-            return {"backend": key, "translated": payload, "warnings": []}
+            # If translator embedded warnings in the payload, surface them at the API level
+            translator_warnings = []
+            if isinstance(payload, dict) and payload.get('warnings'):
+                translator_warnings = payload.pop('warnings')
+            return {"backend": key, "translated": payload, "warnings": translator_warnings}
         if key == 'opal':
             from ...translators.opal import translate_spec_to_opal
             out = translate_spec_to_opal(spec)
-            return {"backend": key, "translated": out, "warnings": []}
+            try:
+                payload = json.loads(out)
+            except Exception:
+                payload = out
+            translator_warnings = []
+            if isinstance(payload, dict) and payload.get('warnings'):
+                translator_warnings = payload.pop('warnings')
+            return {"backend": key, "translated": payload, "warnings": translator_warnings}
         if key == 'scuffem':
             from ...translators.scuffem import translate_spec_to_scuffem
             out = translate_spec_to_scuffem(spec)
@@ -151,7 +165,10 @@ def translate_backend(name: str, spec: dict[str, Any]) -> dict[str, Any]:
                 payload = json.loads(out)
             except Exception:
                 payload = out
-            return {"backend": key, "translated": payload, "warnings": []}
+            translator_warnings = []
+            if isinstance(payload, dict) and payload.get('warnings'):
+                translator_warnings = payload.pop('warnings')
+            return {"backend": key, "translated": payload, "warnings": translator_warnings}
         if key == 'pygdm':
             from ...translators.pygdm import translate_spec_to_pygdm
             out = translate_spec_to_pygdm(spec)
@@ -159,7 +176,10 @@ def translate_backend(name: str, spec: dict[str, Any]) -> dict[str, Any]:
                 payload = json.loads(out)
             except Exception:
                 payload = out
-            return {"backend": key, "translated": payload, "warnings": []}
+            translator_warnings = []
+            if isinstance(payload, dict) and payload.get('warnings'):
+                translator_warnings = payload.pop('warnings')
+            return {"backend": key, "translated": payload, "warnings": translator_warnings}
         # No translator implemented for meep/dummy etc.
         return {"backend": key, "translated": None, "warnings": ["No server-side translator available for this backend"]}
     except Exception as e:
