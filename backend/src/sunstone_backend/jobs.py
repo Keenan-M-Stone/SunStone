@@ -4,7 +4,11 @@ import os
 import signal
 import subprocess
 import sys
+import json
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from .models.run import JobFile, RunRecord
 from .util.time import utc_now_iso
@@ -40,6 +44,40 @@ class LocalJobRunner:
             if not py_exec:
                 raise RuntimeError(f"Could not find python executable in {py_path}")
             py = py_exec
+
+        # Before launching worker, attempt to translate the run spec and inject any
+        # backend-native fragments (e.g., opal_input/scuffem_input) into the run's
+        # spec.json so the worker will see them when it executes.
+        try:
+            spec_path = run_dir / "spec.json"
+            if spec_path.exists():
+                try:
+                    spec = json.loads(spec_path.read_text())
+                except Exception:
+                    spec = {}
+                try:
+                    # Import translate API helper and call translator for the requested backend
+                    from .api.routes.backends import translate_backend
+                    logger.debug("Calling translate_backend for backend=%s", backend)
+                    res = translate_backend(backend, spec)
+                    payload = res.get('translated') if isinstance(res, dict) else None
+                    if isinstance(payload, dict):
+                        injected = []
+                        # Copy any backend-specific native fragments into spec if present
+                        for key in ('opal_input','scuffem_input','ceviche_input','pygdm_input'):
+                            if key in payload and key not in spec:
+                                spec[key] = payload[key]
+                                injected.append(key)
+                        if injected:
+                            logger.debug("Injected native translator fragments into spec.json: %s", injected)
+                            # Persist updated spec back to disk if we added anything
+                            spec_path.write_text(json.dumps(spec, indent=2))
+                except Exception:
+                    # Translation errors should not fail submission — continue
+                    logger.debug("Translation failed during submit for backend=%s (ignored)", backend)
+                    pass
+        except Exception:
+            pass
 
         cmd = [
             py,

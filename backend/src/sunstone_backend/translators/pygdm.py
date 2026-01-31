@@ -18,11 +18,20 @@ def translate_spec_to_pygdm(spec: dict[str, Any]) -> str:
     if pmls:
         warnings.append("pyGDM translator will ignore PMLs; pyGDM uses alternative truncation approaches.")
 
+    def _map_to_pygdm_surface(bc_item: dict) -> dict:
+        mapping = {"pec": "conducting", "pmc": "magnetic", "periodic": "periodic"}
+        return {"direction": bc_item.get("direction"), "side": bc_item.get("side"), "condition": mapping.get(bc_item.get("type"), "unknown"), "params": bc_item.get("params", {})}
+
+    pygdm_surface_conditions = [_map_to_pygdm_surface(b) for b in bcs]
+
     return json.dumps({
         'backend': 'pygdm',
         'domain': domain,
         'geometry_count': len(geom),
         'boundaries': {"pml_specs": pmls, "other": bcs},
+        'surface_conditions': pygdm_surface_conditions,
+        # pyGDM native fragment (conservative)
+        'pygdm_input': {'surface_conditions': pygdm_surface_conditions},
         'warnings': warnings,
         'note': 'pyGDM translator stub'
     }, indent=2)

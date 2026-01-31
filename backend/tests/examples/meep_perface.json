@@ -1,0 +1,12 @@
+{
+  "domain": { "cell_size": [1.0, 1.0, 0.0], "resolution": 20, "dimension": "2d" },
+  "boundary_conditions": [
+    { "face": "px", "type": "pml", "params": { "pml_thickness": 0.2 } },
+    { "face": "nx", "type": "pec" },
+    { "face": "py", "type": "pml", "params": { "pml_thickness": 0.1 } },
+    { "face": "ny", "type": "periodic" }
+  ],
+  "sources": [ { "type": "gaussian_pulse", "component": "Ez", "center_freq": 3e14, "fwidth": 1e14, "position": [0.3, 0.5, 0.0] } ],
+  "monitors": [ { "id": "m1", "position": [0.5, 0.5, 0], "components": ["Ez"], "dt": 1e-16 } ],
+  "outputs": { "field_snapshot": { "components": ["Ez"] } }
+}

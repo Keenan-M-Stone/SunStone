@@ -1,0 +1,10 @@
+{
+  "domain": { "cell_size": [1.0, 1.0, 0.0] },
+  "boundary_conditions": [
+    { "face": "px", "type": "pml", "params": { "pml_thickness": 0.1 } },
+    { "face": "nx", "type": "pml", "params": { "pml_thickness": 0.1 } },
+    { "face": "py", "type": "pml", "params": { "pml_thickness": 0.1 } },
+    { "face": "ny", "type": "pml", "params": { "pml_thickness": 0.1 } }
+  ],
+  "outputs": {}
+}

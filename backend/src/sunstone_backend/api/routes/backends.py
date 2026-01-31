@@ -23,6 +23,8 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "capabilities": {},
         "boundary_types": ["pml","pec","periodic","symmetry","impedance"],
         "per_face_boundary": False,
+        # Translators for this backend map per-face non-PML BCs into `surface_conditions` in translated payloads
+        "translator_surface_conditions": True,
         "material_models": ["isotropic"],
         "source_types": ["toneburst","gaussian_pulse"],
         "detector_types": ["time_probe","power_integral"],
@@ -57,6 +59,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "ui": {"groups": [["mode", "resolution"], ["wavelength_start", "wavelength_stop", "wavelength_points"]], "advanced": []},
         "boundary_types": ["pec","periodic"],
         "per_face_boundary": False,
+        "translator_surface_conditions": True,
         "material_models": ["isotropic","anisotropic"],
         "source_types": ["plane_wave","toneburst"],
         "detector_types": ["fft_probe","s_parameter"],
@@ -73,6 +76,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
             "mesh_file": {"type": "file", "accept": [".msh", ".stl"], "label": "Precomputed mesh"}
         },
         "boundary_types": ["pec","periodic"],
+        "translator_surface_conditions": True,
         "material_models": ["isotropic"],
         "source_types": ["plane_wave","toneburst"],
         "detector_types": ["s_parameter","power_integral"],
@@ -88,6 +92,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
             "mesh_file": {"type": "file", "accept": [".msh", ".stl"], "label": "Precomputed mesh"}
         },
         "boundary_types": ["pec","periodic"],
+        "translator_surface_conditions": True,
         "material_models": ["isotropic"],
         "source_types": ["plane_wave","toneburst"],
         "detector_types": ["fft_probe","s_parameter"],
@@ -103,6 +108,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         },
         "resource": {"supports_gpu": False, "supports_multithread": True, "supports_distributed": False, "resource_schema": {"cpu_cores": {"type": "number", "min": 1, "max": 128, "default": 1, "label": "CPU cores"}, "gpus": {"type": "number", "min": 0, "max": 8, "default": 0, "label": "GPUs"}}},
         "boundary_types": ["pec","periodic"],
+        "translator_surface_conditions": True,
         "material_models": ["isotropic"],
         "source_types": ["plane_wave","dipole"],
         "detector_types": ["fft_probe","power_integral"],

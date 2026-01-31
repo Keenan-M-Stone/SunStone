@@ -27,10 +27,18 @@ class OpalBackend(Backend):
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # A minimal summary
+        applied = {}
+        # If translator provided native opal_input, simulate applying surface conditions
+        opal_input = spec.get('opal_input') or {}
+        if opal_input:
+            applied['surface_tags'] = opal_input.get('surface_tags', [])
+            applied['surface_conditions'] = opal_input.get('surface_conditions', [])
+
         summary = {
             "backend": self.name,
             "notes": "This is a stub Opal backend. Replace with a full Opal runner.",
             "spec_keys": list(spec.keys()),
+            "applied": applied,
         }
         (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 

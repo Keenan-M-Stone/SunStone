@@ -54,6 +54,13 @@ def translate_spec_to_ceviche(spec: dict[str, Any]) -> str:
     if pmls:
         warnings.append("PML boundary conditions are not supported by Ceviche and will be ignored.")
 
+    # Map per-face non-PML BCs to conservative surface descriptors
+    def _map_to_ceviche_surface(bc_item: dict) -> dict:
+        mapping = {"pec": "conducting", "pmc": "magnetic", "periodic": "periodic"}
+        return {"direction": bc_item.get("direction"), "side": bc_item.get("side"), "condition": mapping.get(bc_item.get("type"), "unknown"), "params": bc_item.get("params", {})}
+
+    ceviche_surface_conditions = [_map_to_ceviche_surface(b) for b in bcs]
+
     payload = {
         "backend": "ceviche",
         "domain": {
@@ -64,6 +71,9 @@ def translate_spec_to_ceviche(spec: dict[str, Any]) -> str:
         "geometry": geometry,
         "materials": materials,
         "boundaries": {"pml_specs": pmls, "other": bcs},
+        "surface_conditions": ceviche_surface_conditions,
+        # Ceviche native fragment (conservative) for surface descriptors
+        "ceviche_input": {"surface_conditions": ceviche_surface_conditions},
         "meta": {"translated_by": "sunstone-ceviche-translator", "version": "0.1"},
         "warnings": warnings,
     }

@@ -1,0 +1,10 @@
+{
+  "domain": { "cell_size": [1.0, 1.0, 0.0] },
+  "boundary_conditions": [
+    { "face": "px", "type": "pec" },
+    { "face": "nx", "type": "pec" },
+    { "face": "py", "type": "periodic" },
+    { "face": "ny", "type": "periodic" }
+  ],
+  "outputs": {}
+}
