@@ -200,6 +200,11 @@ const RunPanel: React.FC<RunPanelProps> = ({
   const [meshFile, setMeshFile] = useState<File | null>(null)
   void meshFile; // keep reference for uploads; value may be unused until mesh operations are invoked
 
+  // Discretization defaults (slices, axis) can be stored in backend options
+  const discretizeSlices = Number(localOptions?.discretize_slices ?? 8)
+  const discretizeAxis = String(localOptions?.discretize_axis ?? 'x')
+
+
   useEffect(() => {
     setLocalOptions(backendOptions || {});
   }, [backend, backendOptions]);
@@ -213,6 +218,8 @@ const RunPanel: React.FC<RunPanelProps> = ({
   const urlParams = (typeof window !== 'undefined') ? new URLSearchParams(window.location.search) : new URLSearchParams('')
   const e2eJob = urlParams.get('e2e_job') === '1'
   const showJobControls = Boolean((run && executionMode === 'ssh') || e2eJob)
+
+  // Discretization defaults editor
 
   const [schemaSelection, setSchemaSelection] = useState<'boundary'|'material'|'source'>('boundary')
   // Run Settings & Inspector popouts
@@ -338,10 +345,28 @@ const RunPanel: React.FC<RunPanelProps> = ({
         hideCad={hideCad}
         setHideCad={setHideCad}
         boundaryPerFace={boundaryPerFace}
-        setBoundaryPerFace={setBoundaryPerFace}
-        boundaryFaces={boundaryFaces}
-        setBoundaryFaces={setBoundaryFaces}
       />
+
+      <div style={{ marginTop: 8 }}>
+        <h4>Discretization defaults</h4>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <label>Default slices
+            <input type="number" value={discretizeSlices} onChange={(e) => updateOption('discretize_slices', Number(e.target.value))} style={{ width: 100, marginLeft: 8 }} />
+          </label>
+          <label>Default axis
+            <select value={discretizeAxis} onChange={(e) => updateOption('discretize_axis', e.target.value)} style={{ marginLeft: 8 }}>
+              <option value="x">x</option>
+              <option value="y">y</option>
+              <option value="z">z</option>
+              <option value="radial">radial</option>
+            </select>
+          </label>
+          <div style={{ marginLeft: 'auto' }}>
+            <button onClick={() => savePreset('discretize')}>Save discretize preset</button>
+            <button onClick={() => { loadPreset('discretize'); }}>Load discretize preset</button>
+          </div>
+        </div>
+      </div>
       <Dashboard runId={run?.id ?? null} />
       <hr />
       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>

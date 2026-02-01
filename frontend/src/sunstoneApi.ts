@@ -95,3 +95,24 @@ export async function getArtifacts(runId: string): Promise<ArtifactEntry[]> {
 export function downloadArtifactUrl(runId: string, path: string): string {
   return `${apiBaseUrl}/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(path)}`
 }
+
+export async function createMaterial(body: any): Promise<{ id: string; path?: string }> {
+  return await http<{ id: string; path?: string }>(`/materials`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function expandGradient(material: any, geometry: any, slices: number = 8, axis: 'x'|'y'|'z'|'radial' = 'x'): Promise<{ slices: any[] }> {
+  return await http<{ slices: any[] }>(`/materials/expand_gradient`, {
+    method: 'POST',
+    body: JSON.stringify({ material, geometry, slices, axis }),
+  })
+}
+
+export async function expandGradientBatch(items: Array<{ key?: string; material: any; geometry: any; slices?: number; axis?: string }>): Promise<{ results: Record<string, any[]> }> {
+  return await http<{ results: Record<string, any[]> }>(`/materials/expand_gradient_batch`, {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  })
+}

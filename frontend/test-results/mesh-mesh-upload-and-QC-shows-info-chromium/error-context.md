@@ -25,7 +25,7 @@
       - generic [ref=e26]:
         - generic [ref=e27]:
           - text: Name
-          - textbox "Name" [active] [ref=e28]: demo
+          - textbox "Name" [ref=e28]: demo
         - button "Create" [ref=e29] [cursor=pointer]
       - generic [ref=e30]:
         - generic [ref=e31]: Active
@@ -139,208 +139,203 @@
             - generic [ref=e116]: pec
             - generic [ref=e117]: PEC (perfect conductor)
           - textbox [ref=e118]: "#e2e8f0"
-        - generic [ref=e119]:
-          - generic [ref=e121]:
-            - generic [ref=e122]: "2"
-            - generic [ref=e123]: mat-ualv43
-          - textbox [ref=e124]: "#cccccc"
-      - heading "Geometry" [level=2] [ref=e125]
-      - button "Edit waveforms" [ref=e127] [cursor=pointer]
-      - generic [ref=e129]:
-        - heading "Meshes" [level=3] [ref=e130]
-        - button "Choose File" [ref=e132]
-      - generic [ref=e133]:
-        - generic [ref=e134]:
-          - strong [ref=e135]: block
-          - text: geom-snkpdt
-        - generic [ref=e136]:
-          - button "Edit" [ref=e137] [cursor=pointer]
-          - button "Remove" [ref=e138] [cursor=pointer]
-      - heading "Sources" [level=2] [ref=e139]
-      - generic [ref=e140]:
-        - generic [ref=e141]:
-          - strong [ref=e142]: Ez
-          - text: src-hrv940
-        - generic [ref=e143]:
-          - button "Edit" [ref=e144] [cursor=pointer]
-          - button "Remove" [ref=e145] [cursor=pointer]
-      - heading "Detectors" [level=2] [ref=e146]
-      - generic [ref=e147]:
-        - generic [ref=e148]:
-          - strong [ref=e149]: Ez
-          - text: mon-1v1wce
-        - generic [ref=e150]:
-          - button "Edit" [ref=e151] [cursor=pointer]
-          - button "Remove" [ref=e152] [cursor=pointer]
-      - heading "Waveforms" [level=2] [ref=e153]
-      - generic [ref=e154]: No waveforms.
-      - heading "Meshes" [level=2] [ref=e155]
-      - generic [ref=e156]: No mesh assets.
-    - generic [ref=e158]:
-      - generic [ref=e159]:
-        - heading "Results" [level=3] [ref=e160]
-        - generic [ref=e161]:
-          - generic [ref=e162]:
+      - heading "Geometry" [level=2] [ref=e119]
+      - button "Edit waveforms" [ref=e121] [cursor=pointer]
+      - generic [ref=e123]:
+        - heading "Meshes" [level=3] [ref=e124]
+        - button "Choose File" [ref=e126]
+      - generic [ref=e127]:
+        - generic [ref=e128]:
+          - strong [ref=e129]: block
+          - text: geom-u12jea
+        - generic [ref=e130]:
+          - button "Edit" [ref=e131] [cursor=pointer]
+          - button "Remove" [ref=e132] [cursor=pointer]
+      - heading "Sources" [level=2] [ref=e133]
+      - generic [ref=e134]:
+        - generic [ref=e135]:
+          - strong [ref=e136]: Ez
+          - text: src-e1fwc9
+        - generic [ref=e137]:
+          - button "Edit" [ref=e138] [cursor=pointer]
+          - button "Remove" [ref=e139] [cursor=pointer]
+      - heading "Detectors" [level=2] [ref=e140]
+      - generic [ref=e141]:
+        - generic [ref=e142]:
+          - strong [ref=e143]: Ez
+          - text: mon-waa3np
+        - generic [ref=e144]:
+          - button "Edit" [ref=e145] [cursor=pointer]
+          - button "Remove" [ref=e146] [cursor=pointer]
+      - heading "Waveforms" [level=2] [ref=e147]
+      - generic [ref=e148]: No waveforms.
+      - heading "Meshes" [level=2] [ref=e149]
+      - generic [ref=e150]: No mesh assets.
+    - generic [ref=e152]:
+      - generic [ref=e153]:
+        - heading "Results" [level=3] [ref=e154]
+        - generic [ref=e155]:
+          - generic [ref=e156]:
             - text: Snapshot Enabled
-            - checkbox "Snapshot Enabled" [checked] [ref=e163]
-          - generic [ref=e164]:
+            - checkbox "Snapshot Enabled" [checked] [ref=e157]
+          - generic [ref=e158]:
             - text: Live Preview
-            - checkbox "Live Preview" [ref=e165]
-          - generic [ref=e166]:
+            - checkbox "Live Preview" [ref=e159]
+          - generic [ref=e160]:
             - text: Preview Component
-            - combobox "Preview Component" [ref=e167]:
+            - combobox "Preview Component" [ref=e161]:
               - option "Ez" [selected]
               - option "Ex"
               - option "Ey"
               - option "Hz"
               - option "Hx"
               - option "Hy"
-          - generic [ref=e168]:
+          - generic [ref=e162]:
             - text: Palette
-            - combobox "Palette" [ref=e169]:
+            - combobox "Palette" [ref=e163]:
               - option "Viridis" [selected]
               - option "Jet"
               - option "Gray"
               - option "Lava"
-          - generic [ref=e170]:
+          - generic [ref=e164]:
             - text: Stride
-            - spinbutton "Stride" [ref=e171]: "4"
-          - generic [ref=e172]:
+            - spinbutton "Stride" [ref=e165]: "4"
+          - generic [ref=e166]:
             - text: Hide CAD
-            - checkbox "Hide CAD" [checked] [ref=e173]
-          - button "Refresh artifacts" [ref=e175] [cursor=pointer]
-        - separator [ref=e176]
-        - generic [ref=e179]: No detector artifacts found for this run.
-      - generic [ref=e180]:
-        - heading "Discretization defaults" [level=4] [ref=e181]
-        - generic [ref=e182]:
-          - generic [ref=e183]:
+            - checkbox "Hide CAD" [checked] [ref=e167]
+          - button "Refresh artifacts" [ref=e169] [cursor=pointer]
+        - separator [ref=e170]
+        - generic [ref=e173]: No detector artifacts found for this run.
+      - generic [ref=e174]:
+        - heading "Discretization defaults" [level=4] [ref=e175]
+        - generic [ref=e176]:
+          - generic [ref=e177]:
             - text: Default slices
-            - spinbutton "Default slices" [ref=e184]: "8"
-          - generic [ref=e185]:
+            - spinbutton "Default slices" [ref=e178]: "8"
+          - generic [ref=e179]:
             - text: Default axis
-            - combobox "Default axis" [ref=e186]:
+            - combobox "Default axis" [ref=e180]:
               - option "x" [selected]
               - option "y"
               - option "z"
               - option "radial"
-          - generic [ref=e187]:
-            - button "Save discretize preset" [ref=e188] [cursor=pointer]
-            - button "Load discretize preset" [ref=e189] [cursor=pointer]
-      - generic [ref=e190]:
-        - heading "Resource Monitor" [level=2] [ref=e191]
-        - generic [ref=e192]:
-          - strong [ref=e193]: "Network/Backend error:"
+          - generic [ref=e181]:
+            - button "Save discretize preset" [ref=e182] [cursor=pointer]
+            - button "Load discretize preset" [ref=e183] [cursor=pointer]
+      - generic [ref=e184]:
+        - heading "Resource Monitor" [level=2] [ref=e185]
+        - generic [ref=e186]:
+          - strong [ref=e187]: "Network/Backend error:"
           - text: "Network error contacting http://localhost:8000/health: Failed to fetch. Is the backend running and reachable?. Is the backend running at"
-          - code [ref=e194]: http://127.0.0.1:8000
+          - code [ref=e188]: http://127.0.0.1:8000
           - text: "?"
-          - button "Dismiss" [ref=e195] [cursor=pointer]
-        - generic [ref=e196]:
-          - generic "Backend error" [ref=e197]
-          - strong [ref=e198]: Backend
+          - button "Dismiss" [ref=e189] [cursor=pointer]
+        - generic [ref=e190]:
+          - generic "Backend error" [ref=e191]
+          - strong [ref=e192]: Backend
           - text: ": Error"
-        - generic [ref=e199]: No resource data yet.
-      - separator [ref=e200]
-      - generic [ref=e201]:
-        - generic [ref=e202]:
-          - generic [ref=e203]:
+        - generic [ref=e193]: No resource data yet.
+      - separator [ref=e194]
+      - generic [ref=e195]:
+        - generic [ref=e196]:
+          - generic [ref=e197]:
             - text: Backend
-            - combobox "Backend" [ref=e204]:
+            - combobox "Backend" [ref=e198]:
               - option "Dummy Backend" [selected]
               - option "Meep (FDTD)"
               - option "Opal (BEM / Eigenmode)"
               - option "Ceviche (Spectral solver)"
               - option "Scuff-EM (BEM)"
               - option "pyGDM (Green dyadic method)"
-          - generic [ref=e205]:
+          - generic [ref=e199]:
             - text: Execution Mode
-            - combobox "Execution Mode" [ref=e206]:
+            - combobox "Execution Mode" [ref=e200]:
               - option "Local" [selected]
               - option "SSH"
               - option "SLURM"
-          - generic [ref=e207]:
-            - generic [ref=e208]: Run settings
-            - button "Open Run Settings" [ref=e210] [cursor=pointer]
-            - generic [ref=e211]: Simulation & backend options are now available in the Run Settings popout.
-          - generic [ref=e212]:
-            - generic [ref=e213]: Dispersion fits
-            - generic [ref=e214]: View fitted Drude parameters for this run (if available).
-            - generic [ref=e215]:
-              - button "Load dispersion" [ref=e217] [cursor=pointer]
-              - generic [ref=e218]: Click to load fitted dispersion parameters
-        - generic [ref=e219]:
-          - generic [ref=e220]:
+          - generic [ref=e201]:
+            - generic [ref=e202]: Run settings
+            - button "Open Run Settings" [ref=e204] [cursor=pointer]
+            - generic [ref=e205]: Simulation & backend options are now available in the Run Settings popout.
+          - generic [ref=e206]:
+            - generic [ref=e207]: Dispersion fits
+            - generic [ref=e208]: View fitted Drude parameters for this run (if available).
+            - generic [ref=e209]:
+              - button "Load dispersion" [ref=e211] [cursor=pointer]
+              - generic [ref=e212]: Click to load fitted dispersion parameters
+        - generic [ref=e213]:
+          - generic [ref=e214]:
             - text: Preview Component
-            - combobox "Preview Component" [ref=e221]:
+            - combobox "Preview Component" [ref=e215]:
               - option "Ez" [selected]
               - option "Ex"
               - option "Ey"
               - option "Hz"
               - option "Hx"
               - option "Hy"
-          - generic [ref=e222]:
+          - generic [ref=e216]:
             - text: Preview Palette
-            - combobox "Preview Palette" [ref=e223]:
+            - combobox "Preview Palette" [ref=e217]:
               - option "Viridis" [selected]
               - option "Jet"
               - option "Gray"
-          - generic [ref=e224]:
-            - button "Open Spec / Translation (Inspector)" [ref=e225] [cursor=pointer]
-            - generic [ref=e226]: Translation controls moved to the Spec tab in the Inspector popout.
-        - generic [ref=e227]:
-          - generic [ref=e228]:
+          - generic [ref=e218]:
+            - button "Open Spec / Translation (Inspector)" [ref=e219] [cursor=pointer]
+            - generic [ref=e220]: Translation controls moved to the Spec tab in the Inspector popout.
+        - generic [ref=e221]:
+          - generic [ref=e222]:
             - text: Snapshot Enabled
-            - checkbox "Snapshot Enabled" [checked] [ref=e229]
-          - generic [ref=e230]:
+            - checkbox "Snapshot Enabled" [checked] [ref=e223]
+          - generic [ref=e224]:
             - text: Live Preview
-            - checkbox "Live Preview" [ref=e231]
-      - separator [ref=e232]
-      - generic [ref=e233]:
-        - generic [ref=e234]:
-          - generic [ref=e235]:
+            - checkbox "Live Preview" [ref=e225]
+      - separator [ref=e226]
+      - generic [ref=e227]:
+        - generic [ref=e228]:
+          - generic [ref=e229]:
             - text: Snapshot Stride
-            - spinbutton "Snapshot Stride" [ref=e236]: "4"
-          - generic [ref=e237]:
+            - spinbutton "Snapshot Stride" [ref=e230]: "4"
+          - generic [ref=e231]:
             - text: Movie dt
-            - spinbutton "Movie dt" [ref=e238]: "2e-15"
-          - generic [ref=e239]:
-            - generic [ref=e240]: Outputs
-            - generic [ref=e241]:
-              - checkbox "Save snapshots" [checked] [ref=e242]
+            - spinbutton "Movie dt" [ref=e232]: "2e-15"
+          - generic [ref=e233]:
+            - generic [ref=e234]: Outputs
+            - generic [ref=e235]:
+              - checkbox "Save snapshots" [checked] [ref=e236]
               - text: Save snapshots
-            - generic [ref=e243]:
-              - checkbox "Save monitors" [checked] [ref=e244]
+            - generic [ref=e237]:
+              - checkbox "Save monitors" [checked] [ref=e238]
               - text: Save monitors
-            - generic [ref=e245]:
-              - checkbox "Save dispersion fits" [ref=e246]
+            - generic [ref=e239]:
+              - checkbox "Save dispersion fits" [ref=e240]
               - text: Save dispersion fits
-            - generic [ref=e247]:
+            - generic [ref=e241]:
               - text: Output path
-              - textbox "Output path" [ref=e248]
-            - generic [ref=e249]:
-              - checkbox "Auto-create movie (use Movie settings)" [ref=e250]
+              - textbox "Output path" [ref=e242]
+            - generic [ref=e243]:
+              - checkbox "Auto-create movie (use Movie settings)" [ref=e244]
               - text: Auto-create movie (use Movie settings)
-        - generic [ref=e251]:
-          - generic [ref=e252]:
+        - generic [ref=e245]:
+          - generic [ref=e246]:
             - text: Movie Start
-            - spinbutton "Movie Start" [ref=e253]: "0"
-          - generic [ref=e254]:
+            - spinbutton "Movie Start" [ref=e247]: "0"
+          - generic [ref=e248]:
             - text: Movie Stop
-            - spinbutton "Movie Stop" [ref=e255]: "2e-13"
-        - generic [ref=e256]:
-          - generic [ref=e257]:
+            - spinbutton "Movie Stop" [ref=e249]: "2e-13"
+        - generic [ref=e250]:
+          - generic [ref=e251]:
             - text: Movie Stride
-            - spinbutton "Movie Stride" [ref=e258]: "2"
-          - generic [ref=e259]:
+            - spinbutton "Movie Stride" [ref=e252]: "2"
+          - generic [ref=e253]:
             - text: Movie Max Frames
-            - spinbutton "Movie Max Frames" [ref=e260]: "120"
-      - separator [ref=e261]
-      - generic [ref=e262]:
-        - button "Create Run" [disabled] [ref=e263] [cursor=pointer]
-        - button "Submit Run" [disabled] [ref=e264] [cursor=pointer]
-        - button "Cancel Run" [disabled] [ref=e265] [cursor=pointer]
-      - separator [ref=e266]
-      - generic [ref=e267]:
-        - button "Open Inspector (Logs / Artifacts / Spec)" [ref=e268] [cursor=pointer]
-        - generic [ref=e269]: Open Inspector to view and manage logs, artifacts and edit/translate the spec.
+            - spinbutton "Movie Max Frames" [ref=e254]: "120"
+      - separator [ref=e255]
+      - generic [ref=e256]:
+        - button "Create Run" [disabled] [ref=e257] [cursor=pointer]
+        - button "Submit Run" [disabled] [ref=e258] [cursor=pointer]
+        - button "Cancel Run" [disabled] [ref=e259] [cursor=pointer]
+      - separator [ref=e260]
+      - generic [ref=e261]:
+        - button "Open Inspector (Logs / Artifacts / Spec)" [ref=e262] [cursor=pointer]
+        - generic [ref=e263]: Open Inspector to view and manage logs, artifacts and edit/translate the spec.
 ```

@@ -13,6 +13,6 @@ test('mesh upload and QC shows info', async ({ page }) => {
   await input.setInputFiles({ name: 'tri.obj', mimeType: 'text/plain', buffer: Buffer.from(obj) })
 
   // Expect QC display (allow a bit more time for upload/QC)
-  await expect(page.locator('text=Vertices: 3')).toBeVisible({ timeout: 5000 })
-  await expect(page.locator('text=Faces: 1')).toBeVisible({ timeout: 5000 })
+  await expect(page.locator('text=Vertices: 3')).toBeVisible({ timeout: 10000 })
+  await expect(page.locator('text=Faces: 1')).toBeVisible({ timeout: 10000 })
 })

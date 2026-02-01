@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createMaterial } from './sunstoneApi'
+import * as Gradients from './util/gradients'
 
 type DispersionTableRow = { f: number; re: number; im: number }
 
@@ -7,6 +9,31 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
   void materials // avoid unused variable warnings
   const [local, setLocal] = useState(() => materials.map(m => ({ ...m })))
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [paramOpen, setParamOpen] = useState(false)
+  const [paramImportId, setParamImportId] = useState<string>('')
+  const [autoCoord, setAutoCoord] = useState<'cartesian'|'spherical'|'cylindrical'>('cartesian')
+  const [autoKind, setAutoKind] = useState<'none'|'linear'|'exponential'|'logarithmic'>('linear')
+  const [autoAxis, setAutoAxis] = useState<string>('x')
+  const previewRef = useRef<HTMLCanvasElement | null>(null)
+  // feature-detect canvas context availability (avoid noisy jsdom errors in test env)
+  const canvasAvailable = (() => {
+    try {
+      if (typeof window === 'undefined' || typeof document === 'undefined') return false
+      if (typeof OffscreenCanvas !== 'undefined') return true
+      if (typeof HTMLCanvasElement === 'undefined') return false
+      const proto = (HTMLCanvasElement.prototype as any)
+      if (!proto || typeof proto.getContext !== 'function') return false
+      try {
+        const c = document.createElement('canvas')
+        const ctx = (c as any).getContext && (c as any).getContext('2d')
+        return !!ctx
+      } catch (e) {
+        return false
+      }
+    } catch (e) {
+      return false
+    }
+  })()
 
   function addMaterial() {
     const id = 'mat-' + Math.random().toString(36).slice(2, 8)
@@ -51,6 +78,37 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
     setMaterials(local)
     onClose()
   }
+
+  // draw preview when editing gradient
+  useEffect(() => {
+    const c = previewRef.current
+    if (!c || editingIndex === null) return
+    const g = local[editingIndex].gradient
+    const m = local[editingIndex]
+    if (!canvasAvailable) return
+    let ctx: CanvasRenderingContext2D | null = null
+    try {
+      ctx = (c as HTMLCanvasElement).getContext('2d')
+    } catch (e) {
+      ctx = null
+    }
+    if (!ctx) return
+    ctx.clearRect(0, 0, c.width, c.height)
+    if (!g) return
+    try {
+      const start: [number, number] = [g.start?.[0] ?? -0.5, g.start?.[1] ?? 0]
+      const end: [number, number] = [g.end?.[0] ?? 0.5, g.end?.[1] ?? 0]
+      const stops = Gradients.generateGradientStops(m, start, end, 16)
+      const grad = ctx.createLinearGradient(0, c.height / 2, c.width, c.height / 2)
+      stops.forEach((s: any) => {
+        grad.addColorStop(s.offset, s.color)
+      })
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, c.width, c.height)
+    } catch (e) {
+      // ignore
+    }
+  }, [editingIndex, local])
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -110,8 +168,154 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
                         <option value="lorentz">Lorentz</option>
                       </select>
                     </label>
+                    <button style={{ marginLeft: 12 }} onClick={() => setParamOpen(p => !p)}>Parameterize</button>
                   </div>
+                  {paramOpen && (
+                    <div style={{ marginTop: 12, padding: 8, borderRadius: 6, background: 'rgba(255,255,255,0.02)' }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <select value={paramImportId} onChange={(e) => setParamImportId(e.target.value)}>
+                          <option value="">-- Import from existing --</option>
+                          {materials.map(mat => <option key={mat.id} value={mat.id}>{mat.id} - {mat.label}</option>)}
+                        </select>
+                        <button onClick={() => {
+                          if (editingIndex === null || !paramImportId) return
+                          const src = materials.find(x => x.id === paramImportId)
+                          if (!src) return
+                          update(editingIndex, { eps: src.eps, color: src.color, model: src.model, dispersion: src.dispersion, gradient: src.gradient })
+                        }}>Import properties</button>
 
+                        <button onClick={() => {
+                          if (editingIndex === null) return
+                          const g = (window as any).__last_drawn_gradient
+                          if (!g) return
+                          const s = g.start || [0, 0]
+                          const e = g.end || [0, 0]
+                          update(editingIndex, { gradient: { type: 'linear', start: [s[0], s[1], 0], end: [e[0], e[1], 0], axis: 'x' } })
+                        }}>Import gradient arrow</button>
+
+                        {/* Auto gradient controls */}
+                        <div style={{ marginLeft: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            Coord
+                            <select id="auto-coord" defaultValue="cartesian" onChange={(e) => setAutoCoord(e.target.value as any)}>
+                              <option value="cartesian">Cartesian</option>
+                              <option value="spherical">Spherical</option>
+                              <option value="cylindrical">Cylindrical</option>
+                            </select>
+                          </label>
+                          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            Kind
+                            <select id="auto-kind" defaultValue="linear" onChange={(e) => setAutoKind(e.target.value as any)}>
+                              <option value="none">none</option>
+                              <option value="linear">linear</option>
+                              <option value="exponential">exponential</option>
+                              <option value="logarithmic">logarithmic</option>
+                            </select>
+                          </label>
+                          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            Axis
+                            <select id="auto-axis" defaultValue="x" onChange={(e) => setAutoAxis(e.target.value)}>
+                              <option value="x">x</option>
+                              <option value="y">y</option>
+                              <option value="z">z</option>
+                              <option value="xy">xy</option>
+                              <option value="xyz">xyz</option>
+                            </select>
+                          </label>
+                          <button onClick={() => {
+                            if (editingIndex === null) return
+                            const mat = local[editingIndex]
+                            const bounds: { min: [number, number]; max: [number, number] } = { min: [-0.5, -0.5], max: [0.5, 0.5] }
+                            // try to read geometry bounds from global geometry if present
+                            try {
+                              const geom = (window as any).__geometry || []
+                              const used = geom.find((gg: any) => gg.materialId === mat.id)
+                              if (used) {
+                                const minx = (used.center?.[0] ?? 0) - (used.size?.[0] ?? 1) / 2
+                                const miny = (used.center?.[1] ?? 0) - (used.size?.[1] ?? 1) / 2
+                                const maxx = (used.center?.[0] ?? 0) + (used.size?.[0] ?? 1) / 2
+                                const maxy = (used.center?.[1] ?? 0) + (used.size?.[1] ?? 1) / 2
+                                bounds.min = [minx, miny]
+                                bounds.max = [maxx, maxy]
+                              }
+                            } catch (e) { }
+                            try {
+                                const grad = Gradients.generateAutoGradient(autoKind, autoCoord as any, autoAxis, bounds)
+                              update(editingIndex, { gradient: grad })
+                              // apply to CAD via global helper
+                              try { (window as any).__applyGradientToGeometry && (window as any).__applyGradientToGeometry(local[editingIndex].id, grad) } catch (e) {}
+                            } catch (e) {
+                              console.warn('auto generation failed', e)
+                            }
+                          }}>Auto</button>
+                        </div>
+
+                      </div>
+
+                      <div style={{ marginTop: 8, display: 'flex', gap: 12 }}>
+                        <div style={{ width: 220 }}>
+                          <div style={{ fontSize: 12, color: '#9ca3af' }}>Preview</div>
+                          <canvas ref={previewRef} width={220} height={80} style={{ width: '220px', height: '80px', marginTop: 6, borderRadius: 4, background: 'rgba(0,0,0,0.08)' }} />
+                        </div>
+
+                        <div style={{ flex: 1 }}>
+                          {editingIndex !== null && (local[editingIndex].gradient ? (() => {
+                            const g = local[editingIndex].gradient
+                            return (
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <div>
+                                  <div className="muted">Start (x, y, z)</div>
+                                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                    <input type="number" value={g.start[0] ?? 0} onChange={e => update(editingIndex, { gradient: { ...g, start: [Number(e.target.value), g.start[1] ?? 0, g.start[2] ?? 0] } })} />
+                                    <input type="number" value={g.start[1] ?? 0} onChange={e => update(editingIndex, { gradient: { ...g, start: [g.start[0] ?? 0, Number(e.target.value), g.start[2] ?? 0] } })} />
+                                    <input type="number" value={g.start[2] ?? 0} onChange={e => update(editingIndex, { gradient: { ...g, start: [g.start[0] ?? 0, g.start[1] ?? 0, Number(e.target.value)] } })} />
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="muted">End (x, y, z)</div>
+                                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                    <input type="number" value={g.end[0] ?? 0} onChange={e => update(editingIndex, { gradient: { ...g, end: [Number(e.target.value), g.end[1] ?? 0, g.end[2] ?? 0] } })} />
+                                    <input type="number" value={g.end[1] ?? 0} onChange={e => update(editingIndex, { gradient: { ...g, end: [g.end[0] ?? 0, Number(e.target.value), g.end[2] ?? 0] } })} />
+                                    <input type="number" value={g.end[2] ?? 0} onChange={e => update(editingIndex, { gradient: { ...g, end: [g.end[0] ?? 0, g.end[1] ?? 0, Number(e.target.value)] } })} />
+                                  </div>
+                                </div>
+
+                                <div style={{ gridColumn: '1 / -1', marginTop: 8 }}>
+                                  <label>Axis
+                                    <select value={g.axis || 'x'} onChange={e => update(editingIndex, { gradient: { ...g, axis: e.target.value } })}>
+                                      <option value="x">x</option>
+                                      <option value="y">y</option>
+                                      <option value="z">z</option>
+                                      <option value="radial">radial</option>
+                                    </select>
+                                  </label>
+                                  <label style={{ marginLeft: 12 }}>Slices
+                                    <input type="number" value={g.slices ?? 8} onChange={e => update(editingIndex, { gradient: { ...g, slices: Number(e.target.value) } })} />
+                                  </label>
+                                </div>
+
+                                <div style={{ gridColumn: '1 / -1', marginTop: 8, display: 'flex', gap: 8 }}>
+                                  <button onClick={async () => {
+                                    const m = local[editingIndex]
+                                    const body = { label: m.label, model: m.model, color: m.color, eps: m.eps, gradient: m.gradient }
+                                    try {
+                                      const res = await createMaterial(body)
+                                      setLocal(prev => prev.map((it, idx) => idx === editingIndex ? { ...it, id: res.id } : it))
+                                      alert('Material created: ' + res.id)
+                                    } catch (err) {
+                                      console.error('create failed', err)
+                                      alert('Create failed: ' + String(err))
+                                    }
+                                  }}>Create on server</button>
+                                </div>
+
+                              </div>
+                            )
+                          })() : <div className="muted">No gradient defined for this material</div>)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div style={{ marginTop: 12 }}>
                     {m.model === 'anisotropic' ? (
                       <div>

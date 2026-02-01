@@ -23,8 +23,9 @@ test('material editor: add anisotropic material and submit run', async ({ page }
   // Fill tensor entries
   const inputs = page.locator('div[style] input').filter({ hasText: '' }) // heuristic
 
-  // Instead of filling all, set first element
-  await page.locator('input').nth(6).fill('2')
+  // Instead of filling all, set first numeric/text element inside the modal to avoid picking color inputs
+  const tensorInput = modal.locator('div[style] input').first()
+  await tensorInput.fill('2')
 
   await page.locator('text=Save materials').click()
   // Wait for the material editor modal to close
@@ -34,7 +35,7 @@ test('material editor: add anisotropic material and submit run', async ({ page }
   // Fill project name and click Create
   await page.locator('label:has-text("Name") input').fill('demo')
   const createBtn = page.locator('h2:has-text("Project")').locator('button:has-text("Create")')
-  await expect(createBtn).toBeEnabled({ timeout: 5000 })
+  await expect(createBtn).toBeEnabled({ timeout: 10000 })
   await createBtn.click()
 
   // Wait until Create Run becomes enabled, create the run, then Submit

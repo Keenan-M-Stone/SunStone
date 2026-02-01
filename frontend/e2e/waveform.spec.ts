@@ -20,6 +20,7 @@ test('waveform editor: create waveform and assign to source', async ({ page }) =
   await page.locator('label:has-text("Waveform") select').selectOption({ label: 'mygauss' })
 
   // Verify spec preview contains waveform id/label
+  await page.locator('label:has-text("Spec Preview") textarea').waitFor({ state: 'visible', timeout: 10000 })
   const specText = await page.locator('label:has-text("Spec Preview") textarea').inputValue()
   expect(specText).toContain('mygauss')
 })

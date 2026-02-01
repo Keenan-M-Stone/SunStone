@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sunstone_backend.settings import get_settings
 from .routes import artifacts, projects, runs
-from .routes import backends
+from .routes import backends, ulf, materials, materials_expand
 
 
 def create_app() -> FastAPI:
@@ -25,6 +25,9 @@ def create_app() -> FastAPI:
     app.include_router(runs.router)
     app.include_router(artifacts.router)
     app.include_router(backends.router)
+    app.include_router(ulf.router)
+    app.include_router(materials.router)
+    app.include_router(materials_expand.router)
     from .routes import mesher
     app.include_router(mesher.router)
     from .routes import metrics

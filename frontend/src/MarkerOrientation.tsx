@@ -1,4 +1,4 @@
-import React from 'react'
+
 
 export function computeOrientationPoints(cx: number, cy: number, ang: number, len: number, headSize: number) {
   const x1 = cx

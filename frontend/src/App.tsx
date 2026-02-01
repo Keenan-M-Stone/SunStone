@@ -4,6 +4,8 @@ import RunPanel from './RunPanel'
 import './App.css'
 import type { CSSProperties, WheelEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+// static import of gradients util for use in render path
+import * as Gradients from './util/gradients'
 import * as THREE from 'three'
 import { getResourceUsage } from './resourceApi'
 
@@ -21,6 +23,8 @@ import {
 import type { ArtifactEntry, ProjectRecord, RunRecord } from './types'
 
 import MaterialEditor from './MaterialEditor'
+import DiscretizePreviewModal from './DiscretizePreviewModal'
+import MarkerOrientation from './MarkerOrientation'
 import WaveformEditor from './WaveformEditor'
 import MeshManager from './MeshManager'
 
@@ -84,7 +88,7 @@ type MaterialDef = {
   model?: 'constant' | 'pec' | 'custom'
   payload?: Record<string, unknown>
 }
-type GeometryShape = 'block' | 'cylinder' | 'polygon' | 'polyline' | 'arc'
+type GeometryShape = 'block' | 'cylinder' | 'polygon' | 'polyline' | 'arc' | 'gradient'
 
 type GeometryItem = {
   id: string
@@ -182,7 +186,7 @@ type WaveformDef = { id: string; label: string; kind: 'samples' | 'analytic'; da
 type MeshAsset = { id: string; name: string; format: string; content: string }
 type ImportKind = 'bundle' | 'config' | 'materials' | 'sources' | 'geometry' | 'waveforms' | 'mesh'
 type DisplayUnit = 'm' | 'um' | 'nm'
-type InsertShape = 'rectangle' | 'square' | 'ellipse' | 'circle' | 'source' | 'detector'
+type InsertShape = 'rectangle' | 'square' | 'ellipse' | 'circle' | 'source' | 'detector' | 'gradient'
 type DrawMode = 'polyline' | 'polygon' | 'arc'
 
 const INITIAL_MATERIALS: MaterialDef[] = [
@@ -499,6 +503,28 @@ function App() {
   const [resolutionPreviewMode, setResolutionPreviewMode] = useState<'off' | 'grid' | 'dots' | 'raster'>('off')
   const [lastResolutionMode, setLastResolutionMode] = useState<'grid' | 'dots' | 'raster'>('raster')
   const [isEditDragging, setIsEditDragging] = useState(false)
+  const [renderMode, setRenderMode] = useState<'none'|'cell-centers'|'rasterize'|'gradient-overlay'|'discretize'>('none')
+  const [showDiscretizeModal, setShowDiscretizeModal] = useState(false)
+  const [discretizeCache, setDiscretizeCache] = useState<Record<string, any[]>>({})
+  const [currentDiscretizeBackend, setCurrentDiscretizeBackend] = useState<string | null>(null)
+
+  // expose cache & current backend to window for e2e tests / debugging
+  useEffect(() => {
+    ;(window as any).__discretizeCache = discretizeCache
+    ;(window as any).__currentDiscretizeBackend = currentDiscretizeBackend
+    return () => {
+      ;(window as any).__discretizeCache = undefined
+      ;(window as any).__currentDiscretizeBackend = undefined
+    }
+  }, [discretizeCache, currentDiscretizeBackend])
+
+  function handleDiscretizeComplete(backend: string, results: Record<string, any[]>) {
+    // merge results into cache
+    setDiscretizeCache((prev) => ({ ...prev, ...Object.fromEntries(Object.entries(results).map(([k, v]) => [`${backend}:${k.split(':')[0]}:${k.split(':')[1]}`, v])) }))
+    setCurrentDiscretizeBackend(backend)
+    setRenderMode('discretize')
+    setShowDiscretizeModal(false)
+  }
   const editDragRef = useRef<
     | {
         id: string
@@ -1593,7 +1619,7 @@ function App() {
                 return { ...g, points: nextPoints, center: nextCenter }
               }),
             )
-          } else {
+          } else if (drag.type === 'arc') {
             setGeometry((prev) =>
               prev.map((g) => {
                 if (g.id !== drag.id || !g.arc) return g
@@ -1604,6 +1630,22 @@ function App() {
                 return { ...g, arc: nextArc }
               }),
             )
+          } else if (drag.type === 'gradient') {
+            setGeometry((prev) =>
+              prev.map((g) => {
+                if (g.id !== drag.id) return g
+                if (!g.start || !g.end) return g
+                const next = { ...g }
+                if (drag.index === 0) next.start = pending
+                if (drag.index === 1) next.end = pending
+                const cx = (next.start[0] + next.end[0]) / 2
+                const cy = (next.start[1] + next.end[1]) / 2
+                next.center = [cx, cy]
+                return next
+              }),
+            )
+          } else {
+            // no-op fallback
           }
         })
       }
@@ -1611,6 +1653,64 @@ function App() {
     window.addEventListener('mousemove', onMove)
     return () => window.removeEventListener('mousemove', onMove)
   }, [isEditDragging, safeCellSize, safeZoom, viewCenter])
+
+  // Track most recently created/edited gradient geometry for Parameterize import
+  useEffect(() => {
+    try {
+      const grads = geometry.filter(g => g.shape === 'gradient')
+      if (grads.length > 0) (window as any).__last_drawn_gradient = grads[grads.length - 1]
+      else (window as any).__last_drawn_gradient = null
+    } catch (e) {
+      ;(window as any).__last_drawn_gradient = null
+    }
+  }, [geometry])
+
+  // Expose current geometry and a helper to apply gradient to geometry so MaterialEditor can update CAD.
+  useEffect(() => {
+    ;(window as any).__geometry = geometry
+    ;(window as any).__applyGradientToGeometry = (materialId: string, gradient: any) => {
+      setGeometry((prev) => {
+        // find existing geometry that uses this material
+        const idx = prev.findIndex((gg) => gg.materialId === materialId)
+        if (idx >= 0) {
+          const g = prev[idx]
+          if (g.shape === 'gradient') {
+            const start = gradient.start ? [gradient.start[0], gradient.start[1]] : (g.start || g.center)
+            const end = gradient.end ? [gradient.end[0], gradient.end[1]] : (g.end || g.center)
+            const next = { ...g, start, end }
+            const out = [...prev]
+            out[idx] = next
+            return out
+          } else {
+            // convert an existing geometry into a gradient arrow overlay
+            const center = g.center || [(g.points?.[0]?.[0] ?? 0), (g.points?.[0]?.[1] ?? 0)]
+            const start = gradient.start ? [gradient.start[0], gradient.start[1]] : [center[0] - (g.size?.[0] ?? 1) / 2, center[1]]
+            const end = gradient.end ? [gradient.end[0], gradient.end[1]] : [center[0] + (g.size?.[0] ?? 1) / 2, center[1]]
+            const arrow = { id: nextId('geom'), shape: 'gradient', center, centerZ: 0, start, end, size: [Math.abs(end[0] - start[0]), Math.abs(end[1] - start[1]), 0], materialId }
+            return [...prev, arrow]
+          }
+        }
+        // if no geometry uses the material, create a small arrow near origin
+        const start = gradient.start ? [gradient.start[0], gradient.start[1]] : [-0.5, 0]
+        const end = gradient.end ? [gradient.end[0], gradient.end[1]] : [0.5, 0]
+        const arrow = { id: nextId('geom'), shape: 'gradient', center: [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2], centerZ: 0, start, end, size: [Math.abs(end[0] - start[0]), Math.abs(end[1] - start[1]), 0], materialId }
+        return [...prev, arrow]
+      })
+    }
+    return () => {
+      ;(window as any).__applyGradientToGeometry = undefined
+      ;(window as any).__geometry = undefined
+    }
+  }, [geometry, setGeometry])
+
+  // signal to e2e tests that the app has completed initial mount
+  useEffect(() => {
+    try {
+      ;(window as any).__appReady = true
+    } catch (e) {}
+    return () => { try { (window as any).__appReady = false } catch (e) {} }
+  }, [])
+
 
   const markerSize = useMemo(() => {
     const viewWidth = safeCellSize[0] / safeZoom
@@ -1668,8 +1768,6 @@ function App() {
     return Math.max(sceneUnitsPerPx * displayFontPt, 6)
   }, [overlayAutoscale, markerScene, displayFontPt, sceneUnitsPerPx])
 
-// MarkerOrientation component
-import MarkerOrientation from './MarkerOrientation'
 
   const snapDistanceWorld = useMemo(() => {
     if (!snapEnabled) return 0
@@ -2890,6 +2988,24 @@ import MarkerOrientation from './MarkerOrientation'
         (drawStart[1] + drawCurrent[1]) / 2,
       ]
 
+      if (insertShape === 'gradient') {
+        const item: GeometryItem = {
+          id: nextId('geom'),
+          shape: 'gradient',
+          center,
+          centerZ: 0,
+          // store start/end in scene coords
+          start: drawStart,
+          end: drawCurrent,
+          size: [Math.abs(dx), Math.abs(dy), 0.0],
+        } as any
+        setGeometry((prev) => [...prev, item])
+        setDrawStart(null)
+        setDrawCurrent(null)
+        pushHistory()
+        return
+      }
+
       const item: GeometryItem = {
         id: nextId('geom'),
         shape: insertShape === 'ellipse' || insertShape === 'circle' ? 'cylinder' : 'block',
@@ -3894,6 +4010,17 @@ import MarkerOrientation from './MarkerOrientation'
           </label>
 
           <h2>CAD Tools</h2>
+
+          <h2>View</h2>
+          <label>
+            Render
+            <select value={renderMode} onChange={(e) => setRenderMode(e.target.value as any)}>
+              <option value="none">None</option>
+              <option value="cell-centers">Cell Centers</option>
+              <option value="rasterize">Rasterize</option>
+              <option value="gradient-overlay">Gradient overlay</option>
+            </select>
+          </label>
           <div className="tool-section">
             <div className="row compact">
             <button
@@ -3918,7 +4045,52 @@ import MarkerOrientation from './MarkerOrientation'
               <option value="circle">Circle</option>
               <option value="source">Source</option>
               <option value="detector">Detector</option>
+              <option value="gradient">Gradient arrow</option>
             </select>
+            </div>
+
+            <h2>View</h2>
+            <label>
+              Render
+              <select value={renderMode} onChange={(e) => {
+                const v = e.target.value as any
+                if (v === 'discretize-preview') {
+                  setShowDiscretizeModal(true)
+                  // don't change renderMode until user fetches and selects a backend
+                  return
+                }
+                setRenderMode(v)
+              }}>
+                <option value="none">None</option>
+                <option value="cell-centers">Cell Centers</option>
+                <option value="rasterize">Rasterize</option>
+                <option value="gradient-overlay">Gradient overlay</option>
+                <option value="discretize-preview">Discretize preview…</option>
+              </select>
+            </label>
+
+            {/* Active discretize backend indicator + refresh */}
+            <div style={{ marginTop: 8 }}>
+              {currentDiscretizeBackend ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div className="muted">Preview backend</div>
+                  <div style={{ fontFamily: 'monospace' }}>{currentDiscretizeBackend}</div>
+                  <div style={{ marginLeft: 'auto' }}>
+                    <button onClick={() => {
+                      // clear cache entries for this backend and reset render
+                      setDiscretizeCache((prev) => {
+                        const out: Record<string, any[]> = {}
+                        for (const k of Object.keys(prev)) {
+                          if (!k.startsWith(`${currentDiscretizeBackend}:`)) out[k] = prev[k]
+                        }
+                        return out
+                      })
+                      setCurrentDiscretizeBackend(null)
+                      setRenderMode('none')
+                    }}>Refresh preview</button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="tool-section draw-section">
@@ -5029,6 +5201,98 @@ import MarkerOrientation from './MarkerOrientation'
                     )
                   }
 
+                  if (g.shape === 'gradient') {
+                    const sx = toScene((g.start && g.start[0]) ?? g.center[0])
+                    const sy = toScene((g.start && g.start[1]) ?? g.center[1])
+                    const ex = toScene((g.end && g.end[0]) ?? g.center[0])
+                    const ey = toScene((g.end && g.end[1]) ?? g.center[1])
+
+                    // Render as gradient overlay if enabled
+                    if (renderMode === 'gradient-overlay') {
+                      // compute gradient stops via util
+                      try {
+                        const { generateGradientStops } = Gradients as any
+                        const start = [(g.start && g.start[0]) ?? g.center[0], (g.start && g.start[1]) ?? g.center[1]]
+                        const end = [(g.end && g.end[0]) ?? g.center[0], (g.end && g.end[1]) ?? g.center[1]]
+                        const stops = generateGradientStops(materials.find(m => m.id === g.materialId) ?? {}, start, end, 8)
+                        const gradId = `grad-${g.id}`
+                        const len = Math.hypot(ex - sx, ey - sy) || 1
+                        const halfW = Math.min(10, len * 0.1)
+                        const dx = ex - sx
+                        const dy = ey - sy
+                        const nx = -dy / len * halfW
+                        const ny = dx / len * halfW
+                        const p1 = `${sx + nx},${sy + ny}`
+                        const p2 = `${ex + nx},${ey + ny}`
+                        const p3 = `${ex - nx},${ey - ny}`
+                        const p4 = `${sx - nx},${sy - ny}`
+                        return (
+                          <g>
+                            <defs>
+                              <linearGradient id={gradId} gradientUnits="userSpaceOnUse" x1={sx} y1={sy} x2={ex} y2={ey}>
+                                {stops.map((s: any, i: number) => (
+                                  <stop key={i} offset={`${Math.round(s.offset * 100)}%`} stopColor={s.color} stopOpacity={s.alpha} />
+                                ))}
+                              </linearGradient>
+                            </defs>
+                            <polygon points={`${p1} ${p2} ${p3} ${p4}`} fill={`url(#${gradId})`} />
+                            <line x1={sx} y1={sy} x2={ex} y2={ey} stroke="#fff" strokeWidth={1} opacity={0.4} />
+                          </g>
+                        )
+                      } catch (e) {
+                        // fallback to simple arrow
+                      }
+                    }
+
+                    // Render discretized slices when active
+                    if (currentDiscretizeBackend && discretizeCache) {
+                      const key = `${currentDiscretizeBackend}:${g.id}:${g.materialId}`
+                      const slices = discretizeCache[key] || null
+                      if (slices && slices.length > 0) {
+                        return (
+                          <g>
+                            {slices.map((slice: any, i: number) => (
+                              <polygon key={i} points={slice.points.map((p: any) => `${toScene(p[0])},${toScene(p[1])}`).join(' ')} fill={slice.color ?? 'rgba(180,180,180,0.6)'} stroke="rgba(0,0,0,0.2)" />
+                            ))}
+                            <line x1={sx} y1={sy} x2={ex} y2={ey} stroke="#fff" strokeWidth={1} opacity={0.4} />
+                          </g>
+                        )
+                      }
+                    }
+
+                    const dx = ex - sx
+                    const dy = ey - sy
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1
+                    const headLen = Math.min(12, len * 0.2)
+                    const hx = ex - (dx / len) * headLen
+                    const hy = ey - (dy / len) * headLen
+                    const perpX = -(dy / len) * (headLen * 0.5)
+                    const perpY = (dx / len) * (headLen * 0.5)
+                    const color = materialColor[g.materialId] ?? g.color ?? '#fbbf24'
+                    return (
+                      <g>
+                        <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={color} strokeWidth={overlayStrokeWidth} vectorEffect={overlayAutoscale ? undefined : 'non-scaling-stroke'} />
+                        <polygon points={`${ex},${ey} ${hx + perpX},${hy + perpY} ${hx - perpX},${hy - perpY}`} fill={color} />
+                        {activeTool === 'edit' && isSelected(g.id, 'geometry') && (
+                          <g>
+                            <circle cx={sx} cy={sy} r={selectionHandleRadius} fill="#fff" stroke="#222" strokeWidth={1} vectorEffect="non-scaling-stroke" onMouseDown={(e) => {
+                              e.stopPropagation()
+                              editDragRef.current = { id: g.id, type: 'gradient', index: 0 }
+                              setIsEditDragging(true)
+                              setEditPointSelection({ id: g.id, index: 0, kind: 'gradient' })
+                            }} />
+                            <circle cx={ex} cy={ey} r={selectionHandleRadius} fill="#fff" stroke="#222" strokeWidth={1} vectorEffect="non-scaling-stroke" onMouseDown={(e) => {
+                              e.stopPropagation()
+                              editDragRef.current = { id: g.id, type: 'gradient', index: 1 }
+                              setIsEditDragging(true)
+                              setEditPointSelection({ id: g.id, index: 1, kind: 'gradient' })
+                            }} />
+                          </g>
+                        )}
+                      </g>
+                    )
+                  }
+
                   if (g.shape === 'polyline' && g.points?.length) {
                     const pts = g.points.map((p) => `${toScene(p[0])},${toScene(p[1])}`).join(' ')
                     const smooth = g.smoothing && g.smoothing !== 'none'
@@ -5645,6 +5909,17 @@ import MarkerOrientation from './MarkerOrientation'
               {showMaterialEditor && (
                 <MaterialEditor materials={materials} setMaterials={setMaterials} onClose={() => setShowMaterialEditor(false)} />
               )}
+
+              {/* Discretize preview modal */}
+              <DiscretizePreviewModal
+                open={showDiscretizeModal}
+                onClose={() => { setShowDiscretizeModal(false); setRenderMode('none') }}
+                geometry={geometry}
+                materials={materials}
+                defaultSlices={8}
+                defaultAxis={'x'}
+                onComplete={handleDiscretizeComplete}
+              />
             </div>
 
             <h2>Geometry</h2>

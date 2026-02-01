@@ -16,6 +16,8 @@ type Props = {
   setSnapshotStride: (v: number) => void
   hideCad: boolean
   setHideCad: (v: boolean) => void
+  boundaryPerFace?: boolean
+  setBoundaryPerFace?: (v: boolean) => void
 }
 
 function paletteColor(name: 'viridis' | 'jet' | 'gray' | 'lava', t: number) {
