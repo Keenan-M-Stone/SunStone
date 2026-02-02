@@ -30,6 +30,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ./backend
 
+      - name: Run backend unit tests
+        run: |
+          cd backend
+          pip install pytest
+          pytest -q
+
       - name: Start backend (uvicorn)
         run: |
           python -m uvicorn "sunstone_backend.api.app:create_app" --host 127.0.0.1 --port 8000 &> backend.log &

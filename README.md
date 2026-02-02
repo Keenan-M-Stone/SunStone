@@ -1,73 +1,77 @@
 # SunStone
 
-SunStone is a FOSS optics simulation platform (Meep-first) with:
-- A Vite/React frontend ([frontend](frontend))
-- A Python FastAPI control plane + worker runner ([backend](backend))
+SunStone is a free and open source simulation platform for computational electromagnetics. The project combines a modern React/Vite frontend and a Python FastAPI control plane with modular solver workers (Meep, dummy, and additional backends).
 
-The canonical design spec and build plan is in [foss-optics-fdtd-spec.md](foss-optics-fdtd-spec.md).
+Key components:
+- **Frontend (Vite + React + TypeScript)** — project/run editor, materials, source/monitor placement, 3D preview, and results visualization.
+- **Backend (FastAPI)** — spec validation, project/run management, job submission, and worker orchestration.
+- **Workers (Meep-first + others)** — run executors that produce standardized artifacts (Zarr, JSON, images).
 
-## Prereqs
+## Quick start (development)
 
+Prereqs:
 - Conda environment: `sunstone` (see [environment.yml](environment.yml))
-- Node.js + npm (for the UI)
+- Node.js (v18 LTS recommended) + npm
 
-## Dev quick start
-
-If you prefer a one-command startup/shutdown for both services:
+1) Bring up services (dev):
 
 ```bash
 ./scripts/dev-up.sh
 ```
 
-Stop them:
+2) Stop services:
 
 ```bash
 ./scripts/dev-down.sh
 ```
 
-Check status (PID + log locations):
+3) Frontend dev server:
 
 ```bash
-./scripts/dev-status.sh
+cd frontend
+npm ci
+npm run dev
+# open http://localhost:5173
 ```
 
-### 1) Backend (API + local worker)
+4) Backend dev server:
 
 ```bash
 conda activate sunstone
-cd SunStone/backend
+cd backend
 pip install -e .
-
-# Run in the foreground
 uvicorn sunstone_backend.api.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-API docs:
-- http://127.0.0.1:8000/docs
+## Testing & diagnostics 🔧
 
-### 2) Frontend
+We provide a collection of useful scripts under `scripts/`:
+- `scripts/sunstone_backend_diag.py` — reachability checks and runs `pytest` for backend tests.
+- `scripts/sunstone_frontend_diag.py` — verifies UI reachability, runs frontend unit tests (`vitest`) and builds the frontend.
+- `scripts/e2e.sh` — starts both services and runs Playwright E2E tests.
+- `scripts/sunstone_fullstack_diag.py` — runs backend/frontend diagnostics and optionally the full Playwright E2E harness when `RUN_E2E=1`.
 
-```bash
-cd SunStone/frontend
-npm install
-npm run dev
-```
+CI workflows:
+- `/.github/workflows/ci.yml` runs backend pytest and frontend unit tests + lint + build.
+- `/.github/workflows/e2e.yml` runs an E2E preview and Playwright tests (uses a built preview for determinism).
 
-Then open:
-- http://localhost:5173
+Run tests locally:
+- Backend: `cd backend && pytest -q`
+- Frontend unit tests: `cd frontend && npm run test:unit -- --run`
+- Playwright e2e: `./scripts/e2e.sh` (recommended for deterministic local runs)
 
-## Running a first simulation
+## Unique features 🌟
 
-The current v0 implementation includes a `dummy` backend:
-- It generates synthetic point-monitor time series and writes them to Zarr under `outputs/monitors/`.
-- This proves the run-directory + artifact contract before integrating a real solver.
+SunStone provides some workflows and features that are rare in similar open-source optics tools:
+- **Capability-based backends** — the UI and translators adapt to backend capabilities (e.g., plane detector support) and can expand specs into point-grids when needed.
+- **Planar detector previews & point-grid fallback** — the UI renders planar monitor previews and groups point-grid artifacts produced when a backend expands planes to points.
+- **Notebook report export** — export a runnable Jupyter notebook that embeds run metadata and includes a recipe to assemble representative GIFs of monitor frames.
+- **Deterministic E2E testing harness** — Playwright + a mock backend and global test stubs make end-to-end tests reliable and debuggable.
 
-From the UI:
-- Create project → create run from the JSON spec → submit with backend `dummy`.
+## Documentation & detailed spec
 
-## Meep integration note
+Please see `docs/foss-optics-fdtd-spec.md` for the full design spec, UI references, and troubleshooting tips.
 
-Meep’s Python bindings may not be available for the newest Python.
-The control plane can remain on Python 3.13 while the worker runs under a different interpreter.
-See [backend/README.md](backend/README.md) for the `python_executable` submit option. The UI Run panel
-also exposes a “Meep Python executable” field when the backend is set to `meep`.
+---
+
+If you'd like, I can also add a short video walkthrough or a `docs/QUICK_START.md` with screenshots and CLI examples.

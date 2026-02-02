@@ -1,6 +1,7 @@
 
 import requests
 import sys
+import subprocess
 
 API_BASE = 'http://127.0.0.1:8000'
 
@@ -61,8 +62,28 @@ def check_resource(run_id):
         return False
     return True
 
+def run_pytest():
+    print('Running backend pytest...')
+    try:
+        proc = subprocess.run([sys.executable, '-m', 'pytest', '-q'], cwd='backend', capture_output=True, text=True)
+        print(proc.stdout)
+        if proc.returncode != 0:
+            print('Pytest failures:')
+            print(proc.stderr)
+            return False
+    except Exception as e:
+        print('Failed to run pytest:', e)
+        return False
+    return True
+
+
 def main():
     ok = check_api()
+    # run backend unit tests as part of diagnostics
+    tests_ok = run_pytest()
+    if not tests_ok:
+        print('Backend unit tests failed; skipping run creation.')
+        sys.exit(1)
     project_id = create_project()
     if not project_id:
         print('Some backend diagnostics failed.')

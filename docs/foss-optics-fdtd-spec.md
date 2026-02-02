@@ -349,6 +349,50 @@ Local mode is a first-class target:
 - Render geometry preview + monitor regions
 - Render decimated field slices / iso-surfaces (from derived artifacts)
 
+### 7.4 Detailed UI elements & workflow walkthrough
+This section documents the primary UI elements, their purpose, and typical usage when creating and running a simulation.
+
+Key panels and controls:
+- **Project List / Project Page** — create/open projects, list runs, import/export project bundles.
+- **Scene / Geometry Editor** — import STL/OBJ/PLY, place primitives, drag/transform geometry, assign materials via the Materials panel.
+- **Materials Panel** — browse materials DB, create or edit materials (constant, dispersive models, tensor entries), and apply to geometry.
+- **Sources & Monitors** — place sources (time-domain parameterization) and monitors (point, plane, flux). Planar detectors have a **sampling.mode** option ("plane" or "points") and **sampling.nx/ny** settings for point grids.
+- **Run Panel** — set compute profile, select backend, optional `python_executable` for Meep runs, submit run, and view log streaming.
+- **Results Panel** — accessible from a run page; shows field snapshots (`outputs/fields/*`), monitor CSVs (`outputs/monitors/*.csv`), planar slices (`*_plane_field.json`) and expanded point-grid artifacts (`*_pN_field.json`). The UI groups point-grid children under their plane parent and offers a compact select to pick representative point slices for visualization.
+- **Export / Notebook** — "Export report (notebook)" creates a Jupyter notebook pre-populated with run metadata and a recipe to assemble representative frames into an animated GIF.
+
+Walkthrough: Create → Edit → Run
+1) Create a project. 2) Import geometry or add primitives in the Scene editor. 3) Assign materials. 4) Place sources and monitors. 5) Open Run panel, select backend and compute profile, then submit. 6) Monitor logs and once complete, open Results Panel to inspect artifacts and export reports.
+
+### 7.5 Choosing a backend — capability guidance
+Each backend advertises capabilities. A few common backends and notes:
+- **meep** (time-domain FDTD): high-fidelity time-domain fields, supports planar monitors (native plane sampling), MPI scaling, dispersive models.
+- **dummy**: development-only synthetic artifact generator for UI and integration testing.
+- **ceviche / scuffem / pygdm**: specialized solvers (frequency-domain or BEM/FEM variants); often do not support native plane sampling and will require client-side expansion of plane monitors into point-grids or server-side translation.
+
+Guidance:
+- Choose **meep** for time-domain field sampling, near-to-far transforms, and when MPI or cluster submission is desired.
+- Use **dummy** for fast development and deterministic E2E tests.
+- For specific frequency-domain tasks (e.g., BEM/FEM), prefer the specialized solvers when you need their native strengths (e.g., frequency sweeps, surface integral-methods).
+
+### 7.6 Troubleshooting & diagnostics
+Common issues and how to debug them:
+- **Frontend not reachable**: verify the dev server is running on port 5173, check `scripts/sunstone_frontend_diag.py`, and review `frontend` logs.
+- **Backend API errors**: inspect `uvicorn` logs, run `pytest` in `backend/` to check for failing unit tests, and use `scripts/sunstone_backend_diag.py` for quick checks.
+- **Playwright E2E failures**: our E2E harness runs against a deterministic preview build — rerun `./scripts/e2e.sh` locally, check the `frontend/playwright-report` HTML artifact, and ensure `PLAYWRIGHT_BASE_URL` and `VITE_API_BASE_URL` are correct.
+- **Canvas / JSDOM test failures**: some UI tests use canvas; ensure tests guard for `HTMLCanvasElement.prototype.getContext` or run tests in an environment with `canvas` installed.
+
+Diagnostic scripts
+- `scripts/sunstone_backend_diag.py` — reachability + `pytest` run
+- `scripts/sunstone_frontend_diag.py` — reachability + `vitest` + build
+- `scripts/e2e.sh` — starts backend + frontend preview and runs Playwright tests
+- `scripts/sunstone_fullstack_diag.py` — runs both diagnostics; set `RUN_E2E=1` to execute the full Playwright harness
+
+### 7.7 Unique features & how to use them
+- **Spec overrides / translator expansion**: when a backend cannot natively support plane monitors, the translate/submit flow can expand a plane monitor into a point-grid and attach `spec_override` to the run so the worker (or the preprocessor) uses the expanded spec. This is surfaced in the UI and persisted in the run folder under `spec_override.json`.
+- **Notebook export with representative frames**: from the Results Panel, export a notebook that embeds a placeholder GIF and contains a small code recipe that, when run, will try to assemble a GIF from representative monitor frames using `imageio`.
+
+
 ## 8) Research extensions (planned modules)
 
 ### 8.1 Inverse design
