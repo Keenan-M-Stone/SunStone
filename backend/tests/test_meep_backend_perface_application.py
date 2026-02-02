@@ -76,6 +76,12 @@ def test_meep_backend_applies_perface(tmp_path: Path):
     m.Simulation = FakeMP.Simulation
     m.GaussianSource = FakeMP.GaussianSource
     m.Source = FakeMP.Source
+    # Provide a minimal ModuleSpec so importlib.reload won't fail when reloading the injected fake module
+    try:
+        m.__spec__ = importlib.util.spec_from_loader("meep", loader=None)
+    except Exception:
+        # older Python versions / environments — fall back to assigning a dummy attribute
+        m.__spec__ = None
     sys.modules["meep"] = m
     importlib.reload(sys.modules["meep"])
 

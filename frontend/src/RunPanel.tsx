@@ -229,6 +229,20 @@ const RunPanel: React.FC<RunPanelProps> = ({
   // Editable spec in inspector (local only, not applied to CAD automatically)
   const [editedSpec, setEditedSpec] = useState<string>(specText)
   useEffect(() => setEditedSpec(specText), [specText])
+
+  // Test hook: if window.__sunstoneTest.openInspectorTab is set prior to mounting (e.g., user clicked "Send CAD → Run"), open the Inspector and select that tab.
+  useEffect(() => {
+    try {
+      const t = (window as any).__sunstoneTest?.openInspectorTab
+      if (t) {
+        setShowInspector(true)
+        setInspectorTab(t)
+        try { delete (window as any).__sunstoneTest.openInspectorTab } catch (e) {}
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [specText, run])
   const [translating, setTranslating] = useState(false)
   void translating;
   // Update option and notify parent

@@ -428,6 +428,31 @@ button.primary {
   cursor: crosshair;
 }
 
+/* CAD Tabs */
+.cad-tabs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  background: rgba(0,0,0,0.02);
+}
+.cad-tabs .tab {
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.02);
+  cursor: pointer;
+  font-size: 13px;
+}
+.cad-tabs .tab.active {
+  background: rgba(255,255,255,0.06);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.02) inset;
+  font-weight: 600;
+}
+.cad-tabs .tab-actions { margin-left: auto; display:flex; gap:8px }
+.cad-tabs button { font-size: 12px; padding:4px 8px }
+
+
 .scene .selected rect,
 .scene .selected circle {
   stroke: #fbbf24;

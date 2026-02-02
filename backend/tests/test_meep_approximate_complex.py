@@ -3,7 +3,10 @@ from pathlib import Path
 from sunstone_backend.backends.registry import get_backend
 
 
+import pytest
+
 def test_meep_approximates_complex_eps(tmp_path: Path):
+    pytest.importorskip('meep')  # Skip this test if Meep is not installed in the test env
     spec = {
         "domain": {"cell_size": [2e-05, 1.2e-05, 0], "resolution": 40, "dimension": "2d"},
         "materials": [

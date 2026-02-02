@@ -489,7 +489,6 @@ function App() {
     stack: Array<{ geometry: GeometryItem[]; sources: SourceItem[]; monitors: MonitorItem[] }>
     index: number
   }>({ stack: [], index: -1 })
-  const clipboardRef = useRef<{ geometry: GeometryItem[]; sources: SourceItem[]; monitors: MonitorItem[] } | null>(null)
   const [isSpacePressed, setIsSpacePressed] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [helpTab, setHelpTab] = useState<'about' | 'keymap' | 'docs'>('about')
@@ -658,7 +657,16 @@ function App() {
   const [showMaterialEditor, setShowMaterialEditor] = useState(false)
   const [showWaveformEditor, setShowWaveformEditor] = useState(false)
 
-  const [geometry, setGeometry] = useState<GeometryItem[]>([
+  type CadTab = {
+    id: string
+    name: string
+    geometry: GeometryItem[]
+    sources: SourceItem[]
+    monitors: MonitorItem[]
+  }
+
+  // initial per-tab defaults (migrated from previous single-canvas state)
+  const initialGeometry: GeometryItem[] = [
     {
       id: nextId('geom'),
       shape: 'block',
@@ -668,8 +676,8 @@ function App() {
       sizeZ: 2e-7,
       materialId: 'si',
     },
-  ])
-  const [sources, setSources] = useState<SourceItem[]>([
+  ]
+  const initialSources: SourceItem[] = [
     {
       id: nextId('src'),
       position: [-6e-7, 0],
@@ -678,8 +686,8 @@ function App() {
       centerFreq: 3.75e14,
       fwidth: 5e13,
     },
-  ])
-  const [monitors, setMonitors] = useState<MonitorItem[]>([
+  ]
+  const initialMonitors: MonitorItem[] = [
     {
       id: nextId('mon'),
       position: [6e-7, 0],
@@ -691,7 +699,84 @@ function App() {
       size: [4e-7, 4e-7],
       sampling: { mode: 'points', nx: 5, ny: 5, fallbackToPoints: true },
     },
-  ])
+  ]
+
+  const [cadTabs, setCadTabs] = useState<CadTab[]>(() => {
+    const tab: CadTab = { id: nextId('tab'), name: 'Tab 1', geometry: initialGeometry, sources: initialSources, monitors: initialMonitors }
+    return [tab]
+  })
+  const [activeTabId, setActiveTabId] = useState<string>(cadTabs[0].id)
+
+  // Simple in-memory clipboard for copy/paste between tabs
+  const clipboardRef = useRef<{ geometry: GeometryItem[]; sources: SourceItem[]; monitors: MonitorItem[] } | null>(null)
+
+  const getActiveTab = () => cadTabs.find((t) => t.id === activeTabId) ?? cadTabs[0]
+
+  const cadTabNodes = useMemo(() => cadTabs.map((t) => {
+    return <div key={t.id} className={'tab ' + (t.id === activeTabId ? 'active' : '')} onClick={() => setActiveTabId(t.id)}>{t.name}</div>
+  }), [cadTabs, activeTabId])
+
+  // Derived accessors for geometry/sources/monitors to keep rest of the code mostly unchanged
+  const geometry = getActiveTab().geometry
+  const setGeometry = (next: GeometryItem[] | ((prev: GeometryItem[]) => GeometryItem[])) => {
+    setCadTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, geometry: typeof next === 'function' ? (next as any)(t.geometry) : next } : t)))
+  }
+  const sources = getActiveTab().sources
+  const setSources = (next: SourceItem[] | ((prev: SourceItem[]) => SourceItem[])) => {
+    setCadTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, sources: typeof next === 'function' ? (next as any)(t.sources) : next } : t)))
+  }
+  const monitors = getActiveTab().monitors
+  const setMonitors = (next: MonitorItem[] | ((prev: MonitorItem[]) => MonitorItem[])) => {
+    setCadTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, monitors: typeof next === 'function' ? (next as any)(t.monitors) : next } : t)))
+  }
+
+  const addTab = (name = `Tab ${cadTabs.length + 1}`) => {
+    const tab: CadTab = { id: nextId('tab'), name, geometry: [], sources: [], monitors: [] }
+    setCadTabs((prev) => [...prev, tab])
+    setActiveTabId(tab.id)
+  }
+
+  const duplicateTab = (id: string) => {
+    const src = cadTabs.find((t) => t.id === id)
+    if (!src) return
+    const copy: CadTab = { id: nextId('tab'), name: `${src.name} (copy)`, geometry: JSON.parse(JSON.stringify(src.geometry)), sources: JSON.parse(JSON.stringify(src.sources)), monitors: JSON.parse(JSON.stringify(src.monitors)) }
+    setCadTabs((prev) => [...prev, copy])
+    setActiveTabId(copy.id)
+  }
+
+  const removeTab = (id: string) => {
+    if (cadTabs.length === 1) return // don't remove the last tab
+    setCadTabs((prev) => {
+      const filtered = prev.filter((t) => t.id !== id)
+      if (activeTabId === id) setActiveTabId(filtered[0].id)
+      return filtered
+    })
+  }
+
+  // Copy selection from active tab into clipboard
+  const copySelection = () => {
+    const sel = selectedItems
+    if (sel.length === 0) return
+    const g = [] as GeometryItem[]
+    const s = [] as SourceItem[]
+    const m = [] as MonitorItem[]
+    for (const it of sel) {
+      if (it.type === 'geometry') {
+        const found = geometry.find((x) => x.id === it.id)
+        if (found) g.push(JSON.parse(JSON.stringify(found)))
+      }
+      if (it.type === 'source') {
+        const found = sources.find((x) => x.id === it.id)
+        if (found) s.push(JSON.parse(JSON.stringify(found)))
+      }
+      if (it.type === 'monitor') {
+        const found = monitors.find((x) => x.id === it.id)
+        if (found) m.push(JSON.parse(JSON.stringify(found)))
+      }
+    }
+    clipboardRef.current = { geometry: g, sources: s, monitors: m }
+  }
+
 
   const [activeTool, setActiveTool] = useState<ActiveTool>('select')
   const [lastPrimaryTool, setLastPrimaryTool] = useState<ActiveTool>('select')
@@ -808,6 +893,13 @@ function App() {
     setHideCad(true)
     setShowRunPanel(true)
   }, [workspaceMode])
+
+  // clear selections when switching tabs
+  useEffect(() => {
+    setSelectedItems([])
+    setSelectedId(null)
+    setSelectedType(null)
+  }, [activeTabId])
 
   useEffect(() => {
     if (hideCad) {
@@ -4017,6 +4109,7 @@ function App() {
             <button onClick={onCreateProject} disabled={!!busy}>
               Create
             </button>
+
           </div>
           <div className="kv">
             <div className="k">Active</div>
@@ -4324,6 +4417,16 @@ function App() {
                   ? 'Space+drag to pan.'
                   : 'Shift+drag to pan.'}{' '}
               Right-drag to pan. Shift+click to multi-select. Drag in Select for box selection. Measure tool: click two points.
+            </div>
+          </div>
+          <div className="cad-tab-bar">
+            <div className="cad-tabs">
+              {cadTabNodes}
+              <div className="tab-actions">
+                <button onClick={() => addTab()}>New tab</button>
+                <button onClick={() => duplicateTab(activeTabId)}>Duplicate</button>
+                <button onClick={() => removeTab(activeTabId)}>Delete</button>
+              </div>
             </div>
           </div>
           <div className="canvas-wrap">
@@ -5960,7 +6063,19 @@ function App() {
             </div>
           </div>
           {dimension === '3d' && show3DPreview && (
-            <div className="three-preview" ref={threeMountRef} />
+            <>
+              <div className="cad-tabs">
+                {cadTabNodes}
+                <div className="tab-actions">
+                  <button onClick={() => addTab('+')}>New tab</button>
+                  <button onClick={() => duplicateTab(activeTabId)}>Duplicate</button>
+                  <button onClick={() => removeTab(activeTabId)}>Delete</button>
+                  <button onClick={() => copySelection()}>Copy</button>
+                  <button onClick={() => pasteClipboard()}>Paste</button>
+                </div>
+              </div>
+              <div className="three-preview" ref={threeMountRef} />
+            </>
           )}
         </section>
         {showProperties && !canvasMaximized && (
@@ -6578,6 +6693,8 @@ function App() {
             project={project}
             onCreateRun={onCreateRun}
             onSubmitRun={onSubmitRun}
+            specText={specText}
+            specRef={specRef}
             executionMode={executionMode}
             setExecutionMode={setExecutionMode}
             sshTarget={sshTarget}
