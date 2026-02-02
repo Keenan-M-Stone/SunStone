@@ -1,15 +1,16 @@
 # SunStone
 
-SunStone is a free and open source simulation platform for computational electromagnetics. The project combines a modern React/Vite frontend and a Python FastAPI control plane with modular solver workers (Meep, dummy, and additional backends).
+SunStone is a free and open source simulation platform for computational electromagnetics.  
+The project combines a modern React/Vite frontend and a Python FastAPI control plane with modular solver workers (Meep, dummy, and additional backends).
 
 Key components:
 - **Frontend (Vite + React + TypeScript)** — project/run editor, materials, source/monitor placement, 3D preview, and results visualization.
 - **Backend (FastAPI)** — spec validation, project/run management, job submission, and worker orchestration.
-- **Workers (Meep-first + others)** — run executors that produce standardized artifacts (Zarr, JSON, images).
+- **Workers** — run executors that produce standardized artifacts (Zarr, JSON, images).
 
 ## Quick start (development)
 
-Prereqs:
+Pre-reqs:  
 - Conda environment: `sunstone` (see [environment.yml](environment.yml))
 - Node.js (v18 LTS recommended) + npm
 
