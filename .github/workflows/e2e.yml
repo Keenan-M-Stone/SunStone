@@ -24,43 +24,62 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'npm'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-cache-${{ runner.os }}-${{ hashFiles('backend/pyproject.toml') }}
 
       - name: Install backend dependencies
         run: |
+          echo "STEP: Install backend deps START $(date -u +%s)"
           python -m pip install --upgrade pip
           pip install -e ./backend
-
-      - name: Run backend unit tests
-        run: |
-          cd backend
-          pip install pytest
-          pytest -q
+          echo "STEP: Install backend deps END $(date -u +%s)"
 
       - name: Start backend (uvicorn)
         run: |
+          echo "STEP: Start backend START $(date -u +%s)"
           python -m uvicorn "sunstone_backend.api.app:create_app" --host 127.0.0.1 --port 8000 &> backend.log &
           # wait for health
           for i in {1..30}; do curl -sSf http://127.0.0.1:8000/health && break || sleep 1; done
+          echo "STEP: Start backend END $(date -u +%s)"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
 
       - name: Install frontend dependencies and Playwright
         working-directory: frontend
         run: |
+          echo "STEP: Install frontend deps START $(date -u +%s)"
           npm ci
           npx playwright install --with-deps
+          echo "STEP: Install frontend deps END $(date -u +%s)"
 
       - name: Build and preview frontend
         working-directory: frontend
         run: |
+          echo "STEP: Build frontend START $(date -u +%s)"
           npm run build
+          echo "STEP: Build frontend END $(date -u +%s)"
+          echo "STEP: Start preview START $(date -u +%s)"
           npm run preview -- --port 5175 &> preview.log &
           for i in {1..30}; do curl -sSf http://127.0.0.1:5175 && break || sleep 1; done
+          echo "STEP: Start preview END $(date -u +%s)"
 
       - name: Run Playwright E2E
         working-directory: frontend
         env:
           VITE_API_BASE_URL: http://127.0.0.1:8000
         run: |
+          echo "STEP: Playwright START $(date -u +%s)"
           npx playwright test --config=playwright.config.ts --reporter=html
+          echo "STEP: Playwright END $(date -u +%s)"
 
       - name: Upload Playwright report (artifact)
         if: always()

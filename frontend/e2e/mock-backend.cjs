@@ -126,7 +126,7 @@ const server = http.createServer((req, res) => {
 })
 
 server.listen(port, () => {
-  console.log('Mock backend listening on', port)
+  console.log('Mock backend listening on', port, 'at', new Date().toISOString())
 })
 
 // Graceful shutdown
