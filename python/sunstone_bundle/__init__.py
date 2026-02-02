@@ -15,6 +15,10 @@ from .bundle import (
     export_field_movie,
 )
 
+# symmetry utilities
+from . import symmetry
+from .symmetry import invariant_tensor_basis, project_to_invariant, suggest_layered_composite_for_diagonal
+
 __all__ = [
     "Bundle",
     "BundleCad",
@@ -30,4 +34,8 @@ __all__ = [
     "plot_monitor_series",
     "plot_monitor_fft",
     "export_field_movie",
+    # symmetry exports
+    "invariant_tensor_basis",
+    "project_to_invariant",
+    "suggest_layered_composite_for_diagonal",
 ]

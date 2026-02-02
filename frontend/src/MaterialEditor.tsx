@@ -193,6 +193,21 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
                           update(editingIndex, { gradient: { type: 'linear', start: [s[0], s[1], 0], end: [e[0], e[1], 0], axis: 'x' } })
                         }}>Import gradient arrow</button>
 
+                        {/* Parameter fields for Drude model */}
+                        {m.model === 'drude' && (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 12 }}>
+                            <label>eps_inf
+                              <input type="number" step="0.1" value={m.eps_inf ?? 1.0} onChange={(e) => update(editingIndex, { eps_inf: Number(e.target.value) })} />
+                            </label>
+                            <label>wp
+                              <input type="number" step="1e13" value={(m.params && m.params.wp) ?? 1e16} onChange={(e) => update(editingIndex, { params: { ...(m.params || {}), wp: Number(e.target.value) } })} />
+                            </label>
+                            <label>gamma
+                              <input type="number" step="1e12" value={(m.params && m.params.gamma) ?? 1e13} onChange={(e) => update(editingIndex, { params: { ...(m.params || {}), gamma: Number(e.target.value) } })} />
+                            </label>
+                          </div>
+                        )}
+
                         {/* Auto gradient controls */}
                         <div style={{ marginLeft: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
                           <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

@@ -68,7 +68,14 @@ const baseProps: any = {
   setBoundaryPerFace: () => {},
   boundaryFaces: { px: { type: 'pml', thickness: 0 }, nx: { type: 'pml', thickness: 0 }, py: { type: 'pml', thickness: 0 }, ny: { type: 'pml', thickness: 0 }, pz: { type: 'pml', thickness: 0 }, nz: { type: 'pml', thickness: 0 } },
   setBoundaryFaces: () => {},
-  specWarnings: null,}
+  specWarnings: null,
+  analysisMode: 'standard',
+  setAnalysisMode: () => {},
+  symmetryRank: 2,
+  setSymmetryRank: () => {},
+  synthesisOptions: {},
+  setSynthesisOptions: () => {},
+}
 
 describe('RunPanel Outputs UI', () => {
   it('toggles outputs and writes backend options', async () => {

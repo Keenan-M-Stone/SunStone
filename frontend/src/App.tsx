@@ -797,6 +797,10 @@ function App() {
 
   const [run, setRun] = useState<RunRecord | null>(null)
   const [backend, setBackend] = useState('dummy')
+  // Analysis options
+  const [analysisMode, setAnalysisMode] = useState<'standard'|'symmetry'|'drude'|'synthesis'>('standard')
+  const [symmetryRank, setSymmetryRank] = useState<number>(2)
+  const [synthesisOptions, setSynthesisOptions] = useState<any>({ preset: 'layered' })
   // backend -> options map persisted in the UI while editing runs
   const [backendOptionsMap, setBackendOptionsMap] = useState<Record<string, any>>(() => {
     try {
@@ -1936,6 +1940,7 @@ function App() {
         return { ...base, type: 'point' }
       }),
       run_control: { until: 'time', max_time: 2e-12 },
+      run_options: { analysis_mode: analysisMode, symmetry: { rank: symmetryRank }, synthesis: synthesisOptions },
       resources: { mode: 'local' },
       waveforms: waveforms.length > 0 ? waveforms : undefined,
       outputs: {
@@ -1986,6 +1991,9 @@ function App() {
     movieMaxFrames,
     snapshotEnabled,
     snapshotStride,
+    analysisMode,
+    symmetryRank,
+    synthesisOptions,
   ])
 
   const specText = useMemo(() => JSON.stringify(spec, null, 2), [spec])
@@ -6710,6 +6718,13 @@ function App() {
             setPreviewComponent={setPreviewComponent}
             previewPalette={previewPalette}
             setPreviewPalette={setPreviewPalette}
+            // analysis props
+            analysisMode={analysisMode}
+            setAnalysisMode={setAnalysisMode}
+            symmetryRank={symmetryRank}
+            setSymmetryRank={setSymmetryRank}
+            synthesisOptions={synthesisOptions}
+            setSynthesisOptions={setSynthesisOptions}
             snapshotEnabled={snapshotEnabled}
             setSnapshotEnabled={setSnapshotEnabled}
             livePreview={livePreview}

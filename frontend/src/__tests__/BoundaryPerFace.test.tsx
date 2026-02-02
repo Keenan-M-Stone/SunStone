@@ -69,6 +69,13 @@ const baseProps: any = {
   hideCad: false,
   setHideCad: () => {},
   specWarnings: null,
+  // analysis props
+  analysisMode: 'standard',
+  setAnalysisMode: () => {},
+  symmetryRank: 2,
+  setSymmetryRank: () => {},
+  synthesisOptions: {},
+  setSynthesisOptions: () => {},
 }
 
 describe('Per-face boundary UI', () => {

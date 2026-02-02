@@ -68,6 +68,12 @@ const baseProps: any = {
   hideCad: false,
   setHideCad: () => {},
   specWarnings: null,
+  analysisMode: 'standard',
+  setAnalysisMode: () => {},
+  symmetryRank: 2,
+  setSymmetryRank: () => {},
+  synthesisOptions: {},
+  setSynthesisOptions: () => {},
 }
 
 describe('Spec Warnings', () => {

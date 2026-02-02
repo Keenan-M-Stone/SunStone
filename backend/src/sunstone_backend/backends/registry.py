@@ -7,6 +7,7 @@ from .opal import OpalBackend
 from .ceviche import CevicheBackend
 from .scuffem import ScuffemBackend
 from .pygdm import PyGDMBackend
+from .synthesis import SynthesisBackend
 
 
 def get_backend(name: str) -> Backend:
@@ -34,4 +35,5 @@ def list_backends() -> list[str]:
         CevicheBackend.name,
         ScuffemBackend.name,
         PyGDMBackend.name,
+        SynthesisBackend.name,
     ]
