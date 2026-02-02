@@ -20,7 +20,7 @@ function waitForHealth(url, timeout = 30000) {
 }
 
 // Start mock backend first
-const mock = spawn(process.execPath, [path.join(process.cwd(), 'e2e', 'mock-backend.js')], { stdio: 'inherit' })
+const mock = spawn(process.execPath, [path.join(process.cwd(), 'e2e', 'mock-backend.cjs')], { stdio: 'inherit' })
 
 ;(async () => {
   try {

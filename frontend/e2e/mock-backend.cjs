@@ -27,6 +27,7 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ name: 'synthesis', capabilities: { presets: ['layered','inclusions'] } }))
     return
   }
+
   if (req.method === 'POST' && url === '/materials/expand_gradient_batch') {
     let body = ''
     req.on('data', (c) => (body += c))
@@ -45,6 +46,7 @@ const server = http.createServer((req, res) => {
     })
     return
   }
+
   // simple echo for other POSTs
   if (req.method === 'POST') {
     let body = ''
