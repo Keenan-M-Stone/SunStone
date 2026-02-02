@@ -87,6 +87,13 @@ interface RunPanelProps {
   boundaryFaces: Record<string, { type: string; thickness?: number }>;
   setBoundaryFaces: (m: Record<string, { type: string; thickness?: number }>) => void;
   specWarnings: string[] | null;
+  // analysis options
+  analysisMode: 'standard'|'symmetry'|'drude'|'synthesis';
+  setAnalysisMode: (v: 'standard'|'symmetry'|'drude'|'synthesis') => void;
+  symmetryRank: number;
+  setSymmetryRank: (v: number) => void;
+  synthesisOptions: any;
+  setSynthesisOptions: (opts: any) => void;
 }
 
 
@@ -145,6 +152,13 @@ const RunPanel: React.FC<RunPanelProps> = ({
   boundaryFaces,
   setBoundaryFaces,
   specWarnings,
+  // analysis options
+  analysisMode,
+  setAnalysisMode,
+  symmetryRank,
+  setSymmetryRank,
+  synthesisOptions,
+  setSynthesisOptions,
   showProperties,
   setShowProperties,
   setMovieDt,
@@ -434,6 +448,13 @@ const RunPanel: React.FC<RunPanelProps> = ({
             <div className="muted" style={{ marginTop: 8 }}>Simulation & backend options are now available in the Run Settings popout.</div>
           </div>
 
+          {specWarnings && specWarnings.length > 0 && (
+            <div style={{ marginTop: 8, padding: 8, border: '1px solid #9a3', background: '#1b2a1b', color: '#dfe7df', borderRadius: 6 }}>
+              <div style={{ fontWeight: 700 }}>Spec Warnings</div>
+              {specWarnings.map((w, i) => <div key={i} style={{ marginTop: 4 }}>{w}</div>)}
+            </div>
+          )}
+
           {/* Backend options moved into Run Settings modal. */}
           {showJobControls && (
             <div style={{ marginTop: 12 }}>
@@ -696,23 +717,44 @@ const RunPanel: React.FC<RunPanelProps> = ({
         <div className="muted">Open Inspector to view and manage logs, artifacts and edit/translate the spec.</div>
       </div>
 
-      {/* Run Settings popout */}
-      {showRunSettings && (
-        <div style={{ position: 'fixed', left: 40, right: 40, top: 40, bottom: 40, zIndex: 1200, background: 'rgba(10,10,12,0.98)', padding: 12, overflow: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontWeight: 700 }}>Run Settings</div>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-              <button onClick={() => setShowRunSettings(false)}>Close</button>
+
+          {showRunSettings && (
+          <div style={{ position: 'fixed', left: 60, right: 60, top: 60, bottom: 60, zIndex: 1200, background: 'rgba(12,12,14,0.96)', padding: 12, overflow: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ fontWeight: 700 }}>Run Settings</div>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <button onClick={() => setShowRunSettings(false)}>Close</button>
+              </div>
             </div>
-          </div>          {specWarnings && specWarnings.length > 0 && (
-            <div style={{ marginTop: 8, padding: 8, border: '1px solid #9a3', background: '#1b2a1b', color: '#dfe7df', borderRadius: 6 }}>
-              <div style={{ fontWeight: 700 }}>Spec Warnings</div>
-              {specWarnings.map((w, i) => <div key={i} style={{ marginTop: 4 }}>{w}</div>)}
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
+
+            {/* Run settings modal omitted in unit tests to avoid heavy UI rendering. */}
+            <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
             <div style={{ flex: 1, minWidth: 320 }}>
               <h4>Simulation settings</h4>
+              <label>
+                Analysis mode
+                <select value={analysisMode} onChange={(e) => setAnalysisMode(e.target.value as any)}>
+                  <option value="standard">Standard</option>
+                  <option value="symmetry">Symmetry analysis</option>
+                  <option value="drude">Drude sweep</option>
+                  <option value="synthesis">Synthesis (generate candidates)</option>
+                </select>
+              </label>
+              {analysisMode === 'symmetry' && (
+                <label>
+                  Symmetry tensor rank
+                  <input type="number" min={1} max={4} value={symmetryRank} onChange={(e) => setSymmetryRank(Number(e.target.value) || 2)} />
+                </label>
+              )}
+              {analysisMode === 'synthesis' && (
+                <label>
+                  Synthesis preset
+                  <select value={(synthesisOptions?.preset) ?? 'layered'} onChange={(e) => setSynthesisOptions((prev:any)=>({...prev,preset:e.target.value}))}>
+                    <option value="layered">Layered / layered composite</option>
+                    <option value="inclusions">Aligned inclusions</option>
+                  </select>
+                </label>
+              )}
               <label>
                 <input type="checkbox" checked={boundaryPerFace} onChange={(e) => setBoundaryPerFace(e.target.checked)} /> Per-face boundary settings
               </label>
