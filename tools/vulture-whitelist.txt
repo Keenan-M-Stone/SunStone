@@ -1,0 +1,35 @@
+# Whitelist of vulture findings to ignore
+# Each line is a simple substring match against vulture output lines.
+# Add entries here for functions/variables that are intentionally referenced dynamically,
+# exported as package entrypoints, or used only in tests.
+
+# CLI entrypoints / console scripts
+worker_entry
+api_entry
+
+# Registry helpers kept for backwards compatibility
+list_backends
+
+# Job runner classes used dynamically or in tests
+LocalJobRunner
+SSHJobRunner
+
+# Hardware detection helpers (exposed dataclasses)
+detect_environment
+logical_cores
+ram_bytes
+vram_bytes
+
+# Bundle helpers (also used by python/sunstone_bundle)
+save_bundle
+load_bundle
+BundleSpec
+
+# ULF / GR helpers (research code kept for future work)
+plebanski_tensor_from_r
+plebanski_tensor_from_kerr
+integrate_ray_from_cartesian
+
+# Misc
+safe_join
+discretize_gradient_over_block

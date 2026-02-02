@@ -61,7 +61,9 @@ def test_api_submit_and_worker_with_approximation(tmp_path: Path, monkeypatch):
     assert isinstance(spec_on_disk.get('materials'), dict)
     assert 'met' in spec_on_disk['materials']
 
-    # Now run the worker directly (synchronous) using meep backend
+    # Now run the worker directly (synchronous) using meep backend; skip test if meep not available
+    import pytest
+    pytest.importorskip('meep')
     from sunstone_backend.worker import main as worker_main
     worker_main(run_dir=run_dir, backend='meep')
 

@@ -10,9 +10,13 @@ def make_materials_list():
     ]
 
 
+import pytest
+
 def test_backends_accept_list_materials(tmp_path: Path):
     basic_spec = {"domain": {"cell_size": [1.0, 1.0, 0.0]}, "materials": make_materials_list()}
     for name in ['dummy', 'opal', 'ceviche', 'scuffem', 'pygdm', 'meep']:
+        if name == 'meep':
+            pytest.importorskip('meep')
         be = get_backend(name)
         run_dir = tmp_path / f'run-{name}'
         run_dir.mkdir()

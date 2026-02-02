@@ -8,21 +8,35 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: [3.11, 3.12]
+        python-version: [3.13, 3.14]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install backend
+      - name: Install backend (with logs)
         run: |
           cd backend
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest
-      - name: Run backend tests
+          python -V
+          pip --version
+          python -m pip install --upgrade pip setuptools wheel 2>&1 | tee /tmp/pip_upgrade.log
+          # capture install output to file (fail loudly and emit logs on error)
+          pip install -e . 2>&1 | tee /tmp/install_backend.log || (echo "backend install failed"; cat /tmp/install_backend.log; exit 2)
+          pip install pytest 2>&1 | tee /tmp/pip_install_test_deps.log || (echo "pip install pytest failed"; cat /tmp/pip_install_test_deps.log; exit 2)
+      - name: Run backend tests (verbose)
         run: |
           cd backend
-          pytest -q
+          pytest -vv --maxfail=1 2>&1 | tee ../backend_pytest.log || (echo "pytest failed"; tail -n 500 ../backend_pytest.log; exit 2)
+      - name: Upload backend logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-logs-${{ matrix.python-version }}
+          path: |
+            /tmp/install_backend.log
+            /tmp/pip_upgrade.log
+            /tmp/pip_install_test_deps.log
+            backend_pytest.log

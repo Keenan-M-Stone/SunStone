@@ -3,7 +3,11 @@ from pathlib import Path
 from sunstone_backend.backends.registry import get_backend
 
 
+import pytest
+
+
 def test_meep_accepts_diag_tensor(tmp_path: Path):
+    pytest.importorskip("meep")
     spec = {
         "domain": {"cell_size": [2e-05, 1.2e-05, 0], "resolution": 40, "dimension": "2d"},
         "materials": [
@@ -28,6 +32,7 @@ def test_meep_accepts_diag_tensor(tmp_path: Path):
 
 
 def test_meep_rejects_complex_eps(tmp_path: Path):
+    pytest.importorskip("meep")
     spec = {
         "domain": {"cell_size": [2e-05, 1.2e-05, 0], "resolution": 40, "dimension": "2d"},
         "materials": [

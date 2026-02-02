@@ -44,7 +44,7 @@ pip install -e .
 uvicorn sunstone_backend.api.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-## Testing & diagnostics 🔧
+## Testing & diagnostics
 
 We provide a collection of useful scripts under `scripts/`:
 - `scripts/sunstone_backend_diag.py` — reachability checks and runs `pytest` for backend tests.
@@ -61,7 +61,7 @@ Run tests locally:
 - Frontend unit tests: `cd frontend && npm run test:unit -- --run`
 - Playwright e2e: `./scripts/e2e.sh` (recommended for deterministic local runs)
 
-## Unique features 🌟
+## Unique features
 
 SunStone provides some workflows and features that are rare in similar open-source optics tools:
 - **Capability-based backends** — the UI and translators adapt to backend capabilities (e.g., plane detector support) and can expand specs into point-grids when needed.
@@ -74,5 +74,3 @@ SunStone provides some workflows and features that are rare in similar open-sour
 Please see `docs/foss-optics-fdtd-spec.md` for the full design spec, UI references, and troubleshooting tips.
 
 ---
-
-If you'd like, I can also add a short video walkthrough or a `docs/QUICK_START.md` with screenshots and CLI examples.
