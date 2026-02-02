@@ -34,6 +34,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "name": "meep",
         "label": "Meep (FDTD)",
         "supports_translation": False,
+        "supports_plane_monitors": True,
         "capabilities": {
             "pml_thickness": {"type": "number", "min": 0.0, "max": 10.0, "default": 0.0, "label": "PML thickness"},
             "max_time": {"type": "number", "min": 0.0, "default": 200, "label": "Max time"},
@@ -49,6 +50,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "name": "ceviche",
         "label": "Ceviche (Spectral)",
         "supports_translation": True,
+        "supports_plane_monitors": False,
         "capabilities": {
             "mode": {"type": "enum", "values": ["scattering", "eigenmode"], "default": "scattering", "label": "Mode"},
             "resolution": {"type": "number", "min": 8, "max": 500, "default": 40, "label": "Resolution"},
@@ -69,6 +71,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "name": "opal",
         "label": "Opal (BEM)",
         "supports_translation": True,
+        "supports_plane_monitors": False,
         "capabilities": {
             "mode": {"type": "enum", "values": ["eigenmode", "scattering"], "default": "scattering", "label": "Mode"},
             "mesh_target_size": {"type": "number", "min": 1e-6, "max": 1.0, "default": 0.01, "label": "Mesh target size"},
@@ -86,6 +89,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "name": "scuffem",
         "label": "Scuff-EM",
         "supports_translation": True,
+        "supports_plane_monitors": False,
         "capabilities": {
             "mesh_resolution": {"type": "number", "min": 1, "max": 100, "default": 20, "label": "Mesh resolution"},
             "frequency_sweep": {"type": "range", "fields": ["start", "stop", "points"], "label": "Frequency sweep"},
@@ -102,6 +106,7 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "name": "pygdm",
         "label": "pyGDM",
         "supports_translation": True,
+        "supports_plane_monitors": False,
         "capabilities": {
             "particle_discretization": {"type": "number", "min": 1, "max": 1000, "default": 10, "label": "Particle discretization"},
             "incident_polarization": {"type": "enum", "values": ["x", "y", "z"], "default": "x", "label": "Incident polarization"},

@@ -44,7 +44,7 @@ export async function createRun(projectId: string, spec: unknown): Promise<RunRe
   })
 }
 
-export async function submitRun(runId: string, backend: string, pythonExecutable?: string, backendOptions?: Record<string, any>, mode: 'local'|'ssh'|'slurm' = 'local', sshTarget?: string, sshOptions?: Record<string, any>): Promise<void> {
+export async function submitRun(runId: string, backend: string, pythonExecutable?: string, backendOptions?: Record<string, any>, mode: 'local'|'ssh'|'slurm' = 'local', sshTarget?: string, sshOptions?: Record<string, any>, specOverride?: any): Promise<void> {
   await http(`/runs/${encodeURIComponent(runId)}/submit`, {
     method: 'POST',
     body: JSON.stringify({
@@ -54,6 +54,7 @@ export async function submitRun(runId: string, backend: string, pythonExecutable
       ssh_target: sshTarget || undefined,
       ssh_options: sshOptions || undefined,
       backend_options: backendOptions || undefined,
+      spec_override: specOverride || undefined,
     }),
   })
 }

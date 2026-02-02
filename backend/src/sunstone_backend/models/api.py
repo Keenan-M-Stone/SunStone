@@ -41,6 +41,10 @@ class SubmitRunRequest(BaseModel):
         default=None,
         description=("Optional backend-specific options passed to the worker and persisted in runtime/backend_options.json"),
     )
+    spec_override: dict | None = Field(
+        default=None,
+        description=("Optional run spec override (pre-translated or expanded) to persist before submission and validation"),
+    )
 
 
 class SubmitRunResponse(BaseModel):

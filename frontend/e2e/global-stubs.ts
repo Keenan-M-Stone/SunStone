@@ -26,7 +26,8 @@ test.beforeEach(async ({ page }) => {
     if (req.method().toUpperCase() !== 'GET') return route.continue()
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ artifacts: [
       { path: 'outputs/fields/field_snapshot.json', size_bytes: 123, mtime: Date.now() },
-      { path: 'outputs/monitors/mon1.csv', size_bytes: 64, mtime: Date.now() }
+      { path: 'outputs/monitors/mon1.csv', size_bytes: 64, mtime: Date.now() },
+      { path: 'outputs/monitors/mon1_plane_field.json', size_bytes: 2048, mtime: Date.now() }
     ] }) })
   })
 

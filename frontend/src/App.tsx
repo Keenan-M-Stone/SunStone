@@ -125,6 +125,12 @@ type MonitorItem = {
   components: Array<'Ex' | 'Ey' | 'Ez'>
   dt: number
   orientation?: number
+  // detector geometry/type
+  shape?: 'point' | 'plane'
+  // size in world units (meters) for planar detectors: [width, height]
+  size?: [number, number]
+  // how sampling should be performed for planar detectors (backends may or may not support direct plane sampling)
+  sampling?: { mode: 'plane' | 'points'; nx?: number; ny?: number; fallbackToPoints?: boolean }
 }
 
 type ActiveTool =
@@ -680,6 +686,10 @@ function App() {
       z: 0,
       components: ['Ez'],
       dt: 1e-16,
+      // defaults for detector type: point by default, with sensible planar defaults if user switches
+      shape: 'point',
+      size: [4e-7, 4e-7],
+      sampling: { mode: 'points', nx: 5, ny: 5, fallbackToPoints: true },
     },
   ])
 
@@ -1815,13 +1825,24 @@ function App() {
         waveform_id: s.waveformId ?? undefined,
         metadata: s.metadata,
       })),
-      monitors: monitors.map((m) => ({
-        type: 'point',
-        id: m.id,
-        position: [m.position[0], m.position[1], dimension === '3d' ? m.z : 0],
-        components: m.components,
-        dt: m.dt,
-      })),
+      monitors: monitors.map((m) => {
+        const base = {
+          id: m.id,
+          position: [m.position[0], m.position[1], dimension === '3d' ? m.z : 0],
+          components: m.components,
+          dt: m.dt,
+        } as any
+        if (m.shape === 'plane') {
+          return {
+            ...base,
+            type: 'plane',
+            size: [m.size?.[0] ?? 0, m.size?.[1] ?? 0],
+            orientation: m.orientation ?? 0,
+            sampling: m.sampling ?? undefined,
+          }
+        }
+        return { ...base, type: 'point' }
+      }),
       run_control: { until: 'time', max_time: 2e-12 },
       resources: { mode: 'local' },
       waveforms: waveforms.length > 0 ? waveforms : undefined,
@@ -1991,7 +2012,23 @@ function App() {
     setBusy('Submitting run…');
     try {
       const pythonExec = executionMode === 'ssh' || executionMode === 'slurm' ? (remotePythonExecutable || undefined) : (backend === 'meep' && meepPythonExecutable ? meepPythonExecutable : undefined)
-      await submitRun(run.id, backend, pythonExec, currentBackendOptions || undefined, executionMode, sshTarget || undefined, sshOptions || undefined);
+
+      // If the selected backend does not support plane monitors, prepare an expanded spec override
+      let specOverride: any = undefined
+      try {
+        if (currentBackendCapabilities && currentBackendCapabilities.supports_plane_monitors === false) {
+          // import helper translator to expand plane monitors into point grids
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const tr = require('./translators')
+          specOverride = tr.prepareSpecForBackend(spec, false)
+          try { console.debug('[DEV] submitting with spec_override (expanded plane monitors)', specOverride) } catch (e) {}
+        }
+      } catch (err) {
+        // ignore translation errors here and proceed with original spec
+        console.warn('Failed to prepare spec override, continuing with original spec', err)
+      }
+
+      await submitRun(run.id, backend, pythonExec, currentBackendOptions || undefined, executionMode, sshTarget || undefined, sshOptions || undefined, specOverride);
       const r = await getRun(run.id);
       setRun(r);
     } catch (e: any) {
@@ -5803,6 +5840,55 @@ function App() {
               >
                 {(() => {
                   const size = Math.max(overlayHandleRadius * 1.1, overlayStrokeWidth * 2.5)
+                  // If this monitor is a planar detector, render a rotated rectangle sized by m.size (world units)
+                  if (m.shape === 'plane') {
+                    const w = (m.size?.[0] ?? (size * 2)) / 1 // world units
+                    const h = (m.size?.[1] ?? (size * 2)) / 1
+                    const hw = w / 2
+                    const hh = h / 2
+                    const ang = m.orientation ?? 0
+                    const c = Math.cos(ang)
+                    const s = Math.sin(ang)
+                    const corners = [
+                      [-hw, -hh],
+                      [hw, -hh],
+                      [hw, hh],
+                      [-hw, hh],
+                    ].map(([dx, dy]) => {
+                      const xw = m.position[0] + dx * c - dy * s
+                      const yw = m.position[1] + dx * s + dy * c
+                      return `${toScene(toFinite(xw, 0))},${toScene(toFinite(yw, 0))}`
+                    })
+                    // Optionally show sampling grid if sampling mode is 'points' and showMarkers enabled
+                    const samples: string[] = []
+                    if ((m.sampling?.mode ?? 'points') === 'points' && showMarkers) {
+                      const nx = Math.max(1, m.sampling?.nx ?? 5)
+                      const ny = Math.max(1, m.sampling?.ny ?? 5)
+                      for (let i = 0; i < nx; i++) {
+                        for (let j = 0; j < ny; j++) {
+                          const fx = nx === 1 ? 0 : i / (nx - 1)
+                          const fy = ny === 1 ? 0 : j / (ny - 1)
+                          const dx = -hw + fx * 2 * hw
+                          const dy = -hh + fy * 2 * hh
+                          const xw = m.position[0] + dx * c - dy * s
+                          const yw = m.position[1] + dx * s + dy * c
+                          samples.push(`${toScene(toFinite(xw, 0))},${toScene(toFinite(yw, 0))}`)
+                        }
+                      }
+                    }
+
+                    return (
+                      <>
+                        <polygon points={corners.join(' ')} fill="rgba(45,212,191,0.12)" stroke="rgba(45,212,191,1)" strokeWidth={overlayStrokeWidth} vectorEffect={overlayAutoscale ? undefined : 'non-scaling-stroke'} />
+                        {samples.map((pt, idx) => {
+                          const [x, y] = pt.split(',').map(Number)
+                          return <circle key={idx} cx={x} cy={y} r={Math.max(1, overlayHandleRadius * 0.3)} fill="rgba(45,212,191,0.9)" />
+                        })}
+                      </>
+                    )
+                  }
+
+                  // default: point-style monitor glyph
                   return (
                     <>
                 <rect
@@ -6412,6 +6498,64 @@ function App() {
                           }}
                         />
                       </label>
+
+                      <label>
+                        Type
+                        <select value={m.shape ?? 'point'} onChange={(e) => updateMonitor(m.id, { shape: e.target.value as MonitorItem['shape'] })}>
+                          <option value="point">Point</option>
+                          <option value="plane">Planar slice</option>
+                        </select>
+                      </label>
+
+                      {m.shape === 'plane' && (
+                        <>
+                          <label>
+                            Size (width, height) ({displayUnits === 'um' ? 'µm' : displayUnits})
+                            <div className="row">
+                              <input
+                                type="number"
+                                value={toDisplayLength(m.size?.[0] ?? 4e-7, displayUnits)}
+                                step={1e-8 * displayScale}
+                                onChange={(e) => {
+                                  const v = e.currentTarget.valueAsNumber
+                                  const next = [(Number.isFinite(v) ? fromDisplayLength(v, displayUnits) : (m.size?.[0] ?? 4e-7)), (m.size?.[1] ?? 4e-7)] as [number, number]
+                                  updateMonitor(m.id, { size: next })
+                                }}
+                              />
+                              <input
+                                type="number"
+                                value={toDisplayLength(m.size?.[1] ?? 4e-7, displayUnits)}
+                                step={1e-8 * displayScale}
+                                onChange={(e) => {
+                                  const v = e.currentTarget.valueAsNumber
+                                  const next = [(m.size?.[0] ?? 4e-7), (Number.isFinite(v) ? fromDisplayLength(v, displayUnits) : (m.size?.[1] ?? 4e-7))] as [number, number]
+                                  updateMonitor(m.id, { size: next })
+                                }}
+                              />
+                            </div>
+                          </label>
+
+                          <label>
+                            Sampling mode
+                            <select value={m.sampling?.mode ?? 'points'} onChange={(e) => updateMonitor(m.id, { sampling: { ...(m.sampling || {}), mode: e.target.value as any } })}>
+                              <option value="plane">Direct plane (backend must support)</option>
+                              <option value="points">Grid of point monitors (fallback / approximate)</option>
+                            </select>
+                          </label>
+
+                          {m.sampling?.mode === 'points' && (
+                            <label>
+                              Grid resolution (nx × ny)
+                              <div className="row">
+                                <input type="number" value={m.sampling?.nx ?? 5} step={1} min={1} onChange={(e) => updateMonitor(m.id, { sampling: { ...(m.sampling || {}), nx: Math.max(1, Number(e.currentTarget.valueAsNumber || 1)) } })} />
+                                <input type="number" value={m.sampling?.ny ?? 5} step={1} min={1} onChange={(e) => updateMonitor(m.id, { sampling: { ...(m.sampling || {}), ny: Math.max(1, Number(e.currentTarget.valueAsNumber || 1)) } })} />
+                              </div>
+                            </label>
+                          )}
+
+                          <div className="muted">Note: Not all backends support direct planar sampling. If unsupported, the UI can fall back to a grid of point monitors (preview shown).</div>
+                        </>
+                      )}
                     </div>
                   ))}
               </div>

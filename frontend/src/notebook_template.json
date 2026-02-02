@@ -1,0 +1,88 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 2,
+  "metadata": {
+    "kernelspec": { "name": "python3", "display_name": "Python 3" },
+    "language_info": { "name": "python" }
+  },
+  "cells": [
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# REPORT METADATA (edit or overwrite as needed)\n",
+        "RESULTS_DIR = \"{RESULTS_DIR}\"  # path or URL to the results artifacts (e.g., http://localhost:8000/runs/r1/artifacts)\n",
+        "RUN_ID = \"{RUN_ID}\"\n",
+        "PROJECT_NAME = \"{PROJECT_NAME}\"\n",
+        "BACKEND = \"{BACKEND}\"\n",
+        "BACKEND_VERSION = \"{BACKEND_VERSION}\"\n",
+        "APP_COMMIT = \"{APP_COMMIT}\"\n",
+        "FRAME_RATE = {FRAME_RATE}  # frames per second for animations\n",
+        "ANIM_LENGTH_S = {ANIM_LENGTH_S}  # seconds for default animation\n",
+        "PALETTE = \"{PALETTE}\"\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "# Planar Monitor Report\n",
+        "This notebook loads simulation outputs from the specified RESULTS_DIR and renders a short report including: the run spec (materials, geometry), CAD snapshot (if available), field snapshots and planar monitor slices, vector-field overlays, summary statistics, and a short GIF animation of the planar monitor frames.\n",
+        "Use the top cell to set the run-specific values before running the notebook.\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import os, json, glob, math\n",
+        "from pathlib import Path\n",
+        "import numpy as np\n",
+        "import pandas as pd\n",
+        "import matplotlib.pyplot as plt\n",
+        "from IPython.display import display, HTML, Image\n",
+        "import imageio\n",
+        "\n",
+        "def palette_color_map(palette_name):\n",
+        "    import matplotlib.cm as cm\n",
+        "    cmap = cm.get_cmap(palette_name)\n",
+        "    def map_fn(v):\n",
+        "        r,g,b,a = cmap(v)\n",
+        "        return (r,g,b)\n",
+        "    return map_fn\n",
+        "\n",
+        "def load_field_json(path):\n",
+        "    with open(path, 'r') as f:\n",
+        "        return json.load(f)\n",
+        "\n",
+        "def load_monitor_csv(path):\n",
+        "    txt = Path(path).read_text()\n",
+        "    return pd.read_csv(Path(path))\n",
+        "\n",
+        "def plot_field(payload, palette='viridis', show_quiver=False, arrow_density=8, arrow_scale=0.8):\n",
+        "    w = payload.get('width')\n",
+        "    h = payload.get('height')\n",
+        "    data = np.array(payload.get('data')).reshape((h,w))\n",
+        "    Ex = np.array(payload.get('Ex')) if payload.get('Ex') else None\n",
+        "    Ey = np.array(payload.get('Ey')) if payload.get('Ey') else None\n",
+        "    fig, ax = plt.subplots(figsize=(6,6))\n",
+        "    im = ax.imshow(data, cmap=palette, origin='lower')\n",
+        "    fig.colorbar(im, ax=ax)\n",
+        "    if show_quiver and Ex is not None and Ey is not None:\n",
+        "        Ex = Ex.reshape((h,w))\n",
+        "        Ey = Ey.reshape((h,w))\n",
+        "        stepx = max(1, w//arrow_density)\n",
+        "        stepy = max(1, h//arrow_density)\n",
+        "        X, Y = np.meshgrid(np.arange(0,w), np.arange(0,h))\n",
+        "        ax.quiver(X[::stepy,::stepx], Y[::stepy,::stepx], Ex.reshape((h,w))[::stepy,::stepx], Ey.reshape((h,w))[::stepy,::stepx], color='white', scale=1/arrow_scale)\n",
+        "    plt.show()\n",
+        "\n",
+        "def make_animation(frames, outpath, fps=10):\n",
+        "    with imageio.get_writer(outpath, mode='I', fps=fps) as writer:\n",
+        "        for im in frames:\n",
+        "            writer.append_data((im*255).astype('uint8'))\n",
+        "    display(Image(filename=outpath))\n"
+      ]
+    }
+  ]
+}

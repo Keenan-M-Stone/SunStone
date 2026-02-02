@@ -63,6 +63,36 @@ const server = http.createServer((req, res) => {
       return
     }
 
+    // Point-grid monitor artifacts: outputs/monitors/mon1_p{n}_field.json
+    if (/_p\d+_field.json$/.test(url)) {
+      const m = url.match(/([^/]+)_p(\d+)_field.json$/)
+      if (m) {
+        const idx = Number(m[2])
+        const w = 4, h = 4
+        const Ex = new Array(w*h).fill(0).map((_,i)=>Math.cos((i + idx)/6))
+        const Ey = new Array(w*h).fill(0).map((_,i)=>Math.sin((i + idx)/6))
+        const Ez = new Array(w*h).fill(0).map((_,i)=>Math.sin((i + idx)/4))
+        const min = Math.min(...Ez), max = Math.max(...Ez)
+        const payload = { width: w, height: h, Ex, Ey, Ez, data: Ez, min, max, dx: 1e-7, dy: 1e-7, origin: [0,0], orientation: 0 }
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(payload))
+        return
+      }
+    }
+
+    // Planar monitor artifact (example): outputs/monitors/mon1_plane_field.json
+    if (url.endsWith('mon1_plane_field.json')) {
+      const w = 8, h = 8
+      const Ex = new Array(w*h).fill(0).map((_,i)=>Math.cos(i/6))
+      const Ey = new Array(w*h).fill(0).map((_,i)=>Math.sin(i/6))
+      const Ez = new Array(w*h).fill(0).map((_,i)=>Math.sin(i/4))
+      const min = Math.min(...Ez), max = Math.max(...Ez)
+      const payload = { width: w, height: h, Ex, Ey, Ez, data: Ez, min, max, dx: 1e-7, dy: 1e-7, origin: [0,0], orientation: 0 }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(payload))
+      return
+    }
+
     // CSV monitor downloads
     if (url.endsWith('.csv')) {
       const csv = 't,value\n0,0\n1e-15,1\n2e-15,0.5\n3e-15,0.2\n4e-15,0.1'

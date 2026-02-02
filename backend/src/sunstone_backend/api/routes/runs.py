@@ -173,6 +173,13 @@ def submit_run(
             if s['type'] not in allowed_src:
                 raise HTTPException(status_code=400, detail=f'Source type "{s["type"]}" not supported by backend {backend}')
 
+    # Persist a spec override if provided (this allows frontend pre-translation / expansion)
+    if req.spec_override is not None:
+        try:
+            (run_dir / 'spec.json').write_text(json.dumps(req.spec_override, indent=2))
+        except Exception:
+            raise HTTPException(status_code=500, detail='Failed to persist spec override')
+
     if req.backend_options is not None:
         for k, v in (req.backend_options or {}).items():
             sch = cap_opts.get(k)

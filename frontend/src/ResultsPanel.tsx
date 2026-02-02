@@ -204,6 +204,11 @@ const ResultsPanel: React.FC<Props> = ({
   const [monitorComponent, setMonitorComponent] = useState<string | null>(null)
   const [monitorPlotMode, setMonitorPlotMode] = useState<'time' | 'fft'>('time')
 
+  // Plane monitor artifacts (2D slices from planar detectors)
+  const planeArtifacts = artifacts.filter((a) => a.path.includes('outputs/monitors/') && a.path.endsWith('_plane_field.json'))
+  // Point-grid artifacts generated from expanded plane monitors (e.g., mon1_p0_field.json)
+  const pointArtifacts = artifacts.filter((a) => a.path.includes('outputs/monitors/') && /_p\d+_field\.json$/.test(a.path))
+
   // Quiver/vector options
   const [showQuiver, setShowQuiver] = useState(false)
   const [arrowDensity, setArrowDensity] = useState(8)
@@ -242,6 +247,7 @@ const ResultsPanel: React.FC<Props> = ({
         if (!res.ok) return
         const payload = await res.json()
         if (!active) return
+        // set field payload for both field snapshots and planar monitor slices
         setFieldPayload(payload)
       } catch (err) {
         // ignore
@@ -311,6 +317,23 @@ const ResultsPanel: React.FC<Props> = ({
         </label>
         <div style={{ marginLeft: 'auto' }}>
           <button onClick={async () => { if (!runId) return; const list = await getArtifacts(runId); setArtifacts(list) }}>Refresh artifacts</button>
+          <button style={{ marginLeft: 8 }} onClick={() => {
+            if (!runId) return
+            // create notebook and download
+            try {
+              const base = downloadArtifactUrl(runId, '')
+              const meta = { RESULTS_DIR: base.replace(/\/$/, ''), RUN_ID: runId, PROJECT_NAME: (window as any).__projectName || '', BACKEND: (window as any).__backend || '', BACKEND_VERSION: (window as any).__backendVersion || '', APP_COMMIT: (window as any).__appCommit || '', FRAME_RATE: 10, ANIM_LENGTH_S: 10, PALETTE: 'viridis' }
+              // dynamic import to keep file small
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const nb = require('./notebook')
+              const artifactNames = (artifacts || []).map((a) => a.path.split('/').slice(-1)[0])
+              const nbObj = nb.createReportNotebookObject(meta, artifactNames)
+              nb.downloadReportNotebook(`run-${runId}-report.ipynb`, nbObj)
+            } catch (err) {
+              console.error('Failed to generate notebook', err)
+              alert('Failed to generate notebook: ' + String(err))
+            }
+          }}>Export report (notebook)</button>
         </div>
         <style>{`.results-panel .muted { font-size: 12px } .results-panel label { margin-left: 8px; font-size: 12px }`}</style>
       </div>
@@ -323,6 +346,27 @@ const ResultsPanel: React.FC<Props> = ({
             <div className="muted">No detector artifacts found for this run.</div>
           )}
           {fieldArtifacts.map((a) => (
+            <button key={a.path} onClick={() => { setFieldPayload(null); setSelectedField(a.path); setSelectedMonitor(null) }} className={selectedField === a.path ? 'active' : ''}>{a.path.split('/').slice(-1)[0]}</button>
+          ))}
+          {planeArtifacts.map((a) => {
+            const name = a.path.split('/').slice(-1)[0]
+            // derive base monitor id like 'mon1' from 'mon1_plane_field.json'
+            const base = name.replace('_plane_field.json', '')
+            const children = pointArtifacts.filter((p) => p.path.includes(`/outputs/monitors/${base}_p`))
+            return (
+              <div key={a.path} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <button onClick={() => { setFieldPayload(null); setSelectedField(a.path); setSelectedMonitor(null) }} className={selectedField === a.path ? 'active' : ''}>{name}</button>
+                {children.length > 0 && (
+                  <select aria-label={`Points for ${base}`} value={selectedField && selectedField.includes(`${base}_p`) ? selectedField : ''} onChange={(e) => { setFieldPayload(null); setSelectedField(e.target.value); setSelectedMonitor(null) }}>
+                    <option value="">Points ({children.length})</option>
+                    {children.map((c) => (<option key={c.path} value={c.path}>{c.path.split('/').slice(-1)[0]}</option>))}
+                  </select>
+                )}
+              </div>
+            )
+          })}
+          {/* Render any orphan point artifacts not attached to a plane */}
+          {pointArtifacts.filter((p) => !planeArtifacts.some((a) => p.path.includes(a.path.split('_plane_field.json')[0]))).map((a) => (
             <button key={a.path} onClick={() => { setFieldPayload(null); setSelectedField(a.path); setSelectedMonitor(null) }} className={selectedField === a.path ? 'active' : ''}>{a.path.split('/').slice(-1)[0]}</button>
           ))}
           {monitorArtifacts.map((a) => (
