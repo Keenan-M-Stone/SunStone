@@ -4,16 +4,23 @@ import * as Gradients from './util/gradients'
 
 type DispersionTableRow = { f: number; re: number; im: number }
 
+const SPEED_OF_LIGHT_M_S = 299_792_458
+type CsvXAxis = 'frequency_hz' | 'wavelength_m' | 'wavelength_um' | 'wavelength_nm'
+type CsvTarget = 'eps' | 'mu'
+
 export default function MaterialEditor({ materials, setMaterials, onClose }:
   { materials: any[]; setMaterials: (m: any[]) => void; onClose: () => void }) {
   void materials // avoid unused variable warnings
   const [local, setLocal] = useState(() => materials.map(m => ({ ...m })))
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [paramOpen, setParamOpen] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [paramImportId, setParamImportId] = useState<string>('')
   const [autoCoord, setAutoCoord] = useState<'cartesian'|'spherical'|'cylindrical'>('cartesian')
   const [autoKind, setAutoKind] = useState<'none'|'linear'|'exponential'|'logarithmic'>('linear')
   const [autoAxis, setAutoAxis] = useState<string>('x')
+  const [csvXAxisEps, setCsvXAxisEps] = useState<CsvXAxis>('frequency_hz')
+  const [csvXAxisMu, setCsvXAxisMu] = useState<CsvXAxis>('frequency_hz')
   const previewRef = useRef<HTMLCanvasElement | null>(null)
   // feature-detect canvas context availability (avoid noisy jsdom errors in test env)
   const canvasAvailable = (() => {
@@ -49,13 +56,59 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
     setLocal(prev => prev.map((m, i) => i === idx ? { ...m, ...changes } : m))
   }
 
+  function ensureFlat9(v: any): number[] {
+    if (Array.isArray(v) && v.length === 9) {
+      const n = v.map((x: any) => (x === '' || x === null || x === undefined ? 0 : Number(x)))
+      return n.map((x: any) => (Number.isFinite(x) ? x : 0))
+    }
+    if (Array.isArray(v) && v.length === 3 && v.every((r: any) => Array.isArray(r) && r.length === 3)) {
+      const flat = [
+        Number(v[0][0]),
+        Number(v[0][1]),
+        Number(v[0][2]),
+        Number(v[1][0]),
+        Number(v[1][1]),
+        Number(v[1][2]),
+        Number(v[2][0]),
+        Number(v[2][1]),
+        Number(v[2][2]),
+      ]
+      return flat.map((x: any) => (Number.isFinite(x) ? x : 0))
+    }
+    return Array(9).fill(0)
+  }
+
+  function renderTensorGrid(m: any, field: 'epsilon' | 'mu' | 'xi' | 'zeta', label: string) {
+    const arr = ensureFlat9(m?.[field])
+    return (
+      <div style={{ marginTop: 10 }}>
+        <div className="muted">{label} (3x3, row-major)</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 8 }}>
+          {Array.from({ length: 9 }).map((_, idx) => (
+            <input
+              key={idx}
+              value={arr[idx]}
+              onChange={(e) => {
+                const next = ensureFlat9(m?.[field])
+                next[idx] = Number(e.target.value)
+                update(editingIndex as number, { [field]: next })
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   function remove(idx: number) {
     setLocal(prev => prev.filter((_, i) => i !== idx))
     setEditingIndex(null)
   }
 
-  function importCSV(idx: number, file: File | null) {
+  function importCSV(idx: number, file: File | null, opts?: { xAxis?: CsvXAxis; target?: CsvTarget }) {
     if (!file) return
+    const xAxis: CsvXAxis = opts?.xAxis ?? 'frequency_hz'
+    const target: CsvTarget = opts?.target ?? 'eps'
     const reader = new FileReader()
     reader.onload = () => {
       const txt = String(reader.result || '')
@@ -63,13 +116,60 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
       const data: DispersionTableRow[] = []
       for (const r of rows) {
         if (r.length >= 2) {
-          const f = Number(r[0])
+          const x = Number(r[0])
           const re = Number(r[1])
           const im = r.length >= 3 ? Number(r[2]) : 0
-          if (!Number.isNaN(f) && !Number.isNaN(re) && !Number.isNaN(im)) data.push({ f, re, im })
+          if (!Number.isNaN(x) && !Number.isNaN(re) && !Number.isNaN(im)) {
+            let f = x
+            if (xAxis !== 'frequency_hz') {
+              const lam_m =
+                xAxis === 'wavelength_m'
+                  ? x
+                  : xAxis === 'wavelength_um'
+                    ? x * 1e-6
+                    : x * 1e-9
+              if (Number.isFinite(lam_m) && lam_m > 0) {
+                f = SPEED_OF_LIGHT_M_S / lam_m
+              }
+            }
+            if (Number.isFinite(f) && f > 0) data.push({ f, re, im })
+          }
         }
       }
-      update(idx, { dispersion: { model: 'table', data } })
+      data.sort((a, b) => a.f - b.f)
+
+      const mid = data.length ? data[Math.floor(data.length / 2)] : null
+
+      if (target === 'eps') {
+        // Keep UI-friendly dispersion table, and also store a backend-friendly `dispersion_fit`
+        // compatible with SunStone backend parse_epsilon_for_meep.
+        update(idx, {
+          dispersion: { model: 'table', data },
+          dispersion_fit: {
+            freqs: data.map((r) => r.f),
+            eps_values: data.map((r) => ({ real: r.re, imag: r.im })),
+          },
+          ...(mid ? {
+            eps: { real: mid.re, imag: mid.im },
+            center_freq: mid.f,
+            approximate_complex: true,
+          } : {}),
+        })
+      } else {
+        // Mu is pass-through in the spec; most backends ignore dispersive mu today,
+        // but we still preserve/import it for round-trip and future backends.
+        update(idx, {
+          mu_dispersion: { model: 'table', data },
+          mu_dispersion_fit: {
+            freqs: data.map((r) => r.f),
+            mu_values: data.map((r) => ({ real: r.re, imag: r.im })),
+          },
+          ...(mid ? {
+            mu: { real: mid.re, imag: mid.im },
+            mu_center_freq: mid.f,
+          } : {}),
+        })
+      }
     }
     reader.readAsText(file)
   }
@@ -169,6 +269,7 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
                       </select>
                     </label>
                     <button style={{ marginLeft: 12 }} onClick={() => setParamOpen(p => !p)}>Parameterize</button>
+                    <button style={{ marginLeft: 8 }} onClick={() => setAdvancedOpen(p => !p)}>Advanced tensors</button>
                   </div>
                   {paramOpen && (
                     <div style={{ marginTop: 12, padding: 8, borderRadius: 6, background: 'rgba(255,255,255,0.02)' }}>
@@ -312,7 +413,26 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
                                 <div style={{ gridColumn: '1 / -1', marginTop: 8, display: 'flex', gap: 8 }}>
                                   <button onClick={async () => {
                                     const m = local[editingIndex]
-                                    const body = { label: m.label, model: m.model, color: m.color, eps: m.eps, gradient: m.gradient }
+                                    const body: any = {
+                                      ...m,
+                                      label: m.label,
+                                      model: m.model,
+                                      color: m.color,
+                                      eps: m.eps,
+                                      gradient: m.gradient,
+                                    }
+                                    if (m.model === 'anisotropic' && Array.isArray(m.epsilon) && m.epsilon.length === 9) {
+                                      const n = m.epsilon.map((v: any) => Number(v))
+                                      if (n.every((v: any) => Number.isFinite(v))) {
+                                        const eps_tensor = [
+                                          [n[0], n[1], n[2]],
+                                          [n[3], n[4], n[5]],
+                                          [n[6], n[7], n[8]],
+                                        ]
+                                        body.eps = eps_tensor
+                                        body.eps_tensor = eps_tensor
+                                      }
+                                    }
                                     try {
                                       const res = await createMaterial(body)
                                       setLocal(prev => prev.map((it, idx) => idx === editingIndex ? { ...it, id: res.id } : it))
@@ -347,15 +467,150 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
                       </div>
                     ) : m.model === 'isotropic' ? (
                       <div>
-                        <label>eps
-                          <input type="number" value={m.eps ?? 1} onChange={(e) => update(editingIndex, { eps: Number(e.target.value) })} />
-                        </label>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <label>eps
+                            {typeof m.eps === 'object' && m.eps && 'real' in m.eps ? (
+                              <input
+                                type="number"
+                                value={Number((m.eps as any).real) as any}
+                                onChange={(e) => {
+                                  const v = e.currentTarget.valueAsNumber
+                                  update(editingIndex, { eps: { real: Number.isFinite(v) ? v : 0, imag: Number((m.eps as any).imag ?? 0) } })
+                                }}
+                              />
+                            ) : (
+                              <input type="number" value={m.eps ?? 1} onChange={(e) => update(editingIndex, { eps: Number(e.target.value) })} />
+                            )}
+                          </label>
+
+                          <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={typeof m.eps === 'object' && m.eps && ('real' in m.eps)}
+                              onChange={(e) => {
+                                const checked = e.target.checked
+                                if (checked) {
+                                  const re = typeof m.eps === 'number' ? m.eps : Number((m.eps as any)?.real ?? 1)
+                                  update(editingIndex, { eps: { real: Number.isFinite(re) ? re : 1, imag: 0 } })
+                                } else {
+                                  const re = Number((m.eps as any)?.real ?? 1)
+                                  update(editingIndex, { eps: Number.isFinite(re) ? re : 1 })
+                                }
+                              }}
+                            />
+                            <span className="muted">Complex eps</span>
+                          </label>
+
+                          {typeof m.eps === 'object' && m.eps && ('real' in m.eps) ? (
+                            <>
+                              <label>Im(eps)
+                                <input
+                                  type="number"
+                                  value={Number((m.eps as any).imag) as any}
+                                  onChange={(e) => {
+                                    const v = e.currentTarget.valueAsNumber
+                                    update(editingIndex, { eps: { real: Number((m.eps as any).real ?? 0), imag: Number.isFinite(v) ? v : 0 } })
+                                  }}
+                                />
+                              </label>
+                              <label>center_freq (Hz)
+                                <input
+                                  type="number"
+                                  value={typeof m.center_freq === 'number' ? m.center_freq : ''}
+                                  onChange={(e) => {
+                                    const v = e.currentTarget.valueAsNumber
+                                    update(editingIndex, { center_freq: Number.isFinite(v) ? v : undefined })
+                                  }}
+                                />
+                              </label>
+                            </>
+                          ) : null}
+                        </div>
+
+                        <div style={{ marginTop: 10, display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <label>mu (optional)
+                            {typeof m.mu === 'object' && m.mu && 'real' in (m.mu as any) ? (
+                              <input
+                                type="number"
+                                value={Number((m.mu as any).real) as any}
+                                onChange={(e) => {
+                                  const v = e.currentTarget.valueAsNumber
+                                  update(editingIndex, { mu: { real: Number.isFinite(v) ? v : 0, imag: Number((m.mu as any).imag ?? 0) } })
+                                }}
+                              />
+                            ) : (
+                              <input
+                                type="number"
+                                value={typeof m.mu === 'number' ? m.mu : ''}
+                                onChange={(e) => {
+                                  const v = e.currentTarget.valueAsNumber
+                                  update(editingIndex, { mu: Number.isFinite(v) ? v : undefined })
+                                }}
+                              />
+                            )}
+                          </label>
+
+                          <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={typeof m.mu === 'object' && m.mu && ('real' in (m.mu as any))}
+                              onChange={(e) => {
+                                const checked = e.target.checked
+                                if (checked) {
+                                  const re = typeof m.mu === 'number' ? m.mu : Number((m.mu as any)?.real ?? 1)
+                                  update(editingIndex, { mu: { real: Number.isFinite(re) ? re : 1, imag: 0 } })
+                                } else {
+                                  const re = Number((m.mu as any)?.real ?? 1)
+                                  update(editingIndex, { mu: Number.isFinite(re) ? re : 1 })
+                                }
+                              }}
+                            />
+                            <span className="muted">Complex mu</span>
+                          </label>
+
+                          {typeof m.mu === 'object' && m.mu && ('real' in (m.mu as any)) ? (
+                            <label>Im(mu)
+                              <input
+                                type="number"
+                                value={Number((m.mu as any).imag) as any}
+                                onChange={(e) => {
+                                  const v = e.currentTarget.valueAsNumber
+                                  update(editingIndex, { mu: { real: Number((m.mu as any).real ?? 0), imag: Number.isFinite(v) ? v : 0 } })
+                                }}
+                              />
+                            </label>
+                          ) : null}
+                        </div>
                         <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
                           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                             <input type="checkbox" checked={!!m.approximate_complex} onChange={(e) => update(editingIndex, { approximate_complex: e.target.checked })} />
                             <span className="muted">Approximate complex eps (Drude fit)</span>
                           </label>
                           <a href="/docs/foss-optics-fdtd-spec.md" target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>Docs</a>
+                        </div>
+
+                        <div style={{ marginTop: 10 }}>
+                          <div>Import ε CSV (x, real, imag)</div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <select value={csvXAxisEps} onChange={(e) => setCsvXAxisEps(e.target.value as CsvXAxis)}>
+                              <option value="frequency_hz">x = frequency (Hz)</option>
+                              <option value="wavelength_m">x = wavelength (m)</option>
+                              <option value="wavelength_um">x = wavelength (μm)</option>
+                              <option value="wavelength_nm">x = wavelength (nm)</option>
+                            </select>
+                            <input type="file" accept=".csv,.txt" onChange={e => importCSV(editingIndex, e.target.files?.[0] ?? null, { xAxis: csvXAxisEps, target: 'eps' })} />
+                          </div>
+
+                          <div style={{ marginTop: 10 }}>Import μ CSV (x, real, imag)</div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <select value={csvXAxisMu} onChange={(e) => setCsvXAxisMu(e.target.value as CsvXAxis)}>
+                              <option value="frequency_hz">x = frequency (Hz)</option>
+                              <option value="wavelength_m">x = wavelength (m)</option>
+                              <option value="wavelength_um">x = wavelength (μm)</option>
+                              <option value="wavelength_nm">x = wavelength (nm)</option>
+                            </select>
+                            <input type="file" accept=".csv,.txt" onChange={e => importCSV(editingIndex, e.target.files?.[0] ?? null, { xAxis: csvXAxisMu, target: 'mu' })} />
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -373,13 +628,24 @@ export default function MaterialEditor({ materials, setMaterials, onClose }:
                             <label>gamma<input type="number" value={m.dispersion?.gamma ?? ''} onChange={e => update(editingIndex, { dispersion: { ...(m.dispersion||{}), gamma: Number(e.target.value) } })} /></label>
                           </div>
                         )}
-                        <div style={{ marginTop: 8 }}>
-                          <div>Or import CSV (freq, real, imag)</div>
-                          <input type="file" accept=".csv,.txt" onChange={e => importCSV(editingIndex, e.target.files?.[0] ?? null)} />
-                        </div>
                       </div>
                     )}
                   </div>
+
+                  {advancedOpen && (
+                    <div style={{ marginTop: 12, padding: 10, borderRadius: 6, background: 'rgba(255,255,255,0.02)' }}>
+                      <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 8 }}>
+                        Advanced constitutive tensors (optional)
+                      </div>
+                      <div className="muted" style={{ marginBottom: 8 }}>
+                        These fields are passed through to the run spec for backends/translators that understand them.
+                      </div>
+
+                      {renderTensorGrid(m, 'mu', 'μ (relative permeability tensor)')}
+                      {renderTensorGrid(m, 'xi', 'ξ (magneto-electric coupling)')}
+                      {renderTensorGrid(m, 'zeta', 'ζ (magneto-electric coupling)')}
+                    </div>
+                  )}
 
                   <div style={{ marginTop: 12 }}>
                     <button onClick={() => setEditingIndex(null)}>Done</button>

@@ -24,9 +24,18 @@ import type { ArtifactEntry, ProjectRecord, RunRecord } from './types'
 
 import MaterialEditor from './MaterialEditor'
 import DiscretizePreviewModal from './DiscretizePreviewModal'
+import ConstitutiveWorkbenchDialog from './ConstitutiveWorkbenchDialog'
+import { applyScaleAndTranslate2D, computeBundleMaterialIdMap, computeGeometryBounds2D, fetchBundleArtifactJson, mergeBundleMaterials, normalizeBundleGeometryItems } from './workbench/bundleArtifacts'
+import { computeSpecWarnings } from './workbench/specWarnings'
 import MarkerOrientation from './MarkerOrientation'
 import WaveformEditor from './WaveformEditor'
 import MeshManager from './MeshManager'
+import SourcePropertiesPanel from './optics/SourcePropertiesPanel'
+import DetectorPropertiesPanel from './optics/DetectorPropertiesPanel'
+import SourcesListPanel from './optics/SourcesListPanel'
+import DetectorsListPanel from './optics/DetectorsListPanel'
+import WaveformsListPanel from './optics/WaveformsListPanel'
+import MeshAssetsListPanel from './mesh/MeshAssetsListPanel'
 
 // Estimate memory usage for Meep grid (rough, assumes double precision, 8 bytes per grid point per field)
 function estimateMeepMemory(cellSize: [number, number, number], resolution: number, dimension: string): number {
@@ -116,6 +125,7 @@ type SourceItem = {
   waveformId?: string
   metadata?: Record<string, unknown>
   orientation?: number
+  polarization?: any
 }
 
 type MonitorItem = {
@@ -194,6 +204,110 @@ type ImportKind = 'bundle' | 'config' | 'materials' | 'sources' | 'geometry' | '
 type DisplayUnit = 'm' | 'um' | 'nm'
 type InsertShape = 'rectangle' | 'square' | 'ellipse' | 'circle' | 'source' | 'detector' | 'gradient'
 type DrawMode = 'polyline' | 'polygon' | 'arc'
+
+function flat9ToMatrix3x3(flat: any): number[][] | null {
+  if (!Array.isArray(flat) || flat.length !== 9) return null
+  const n = flat.map((v) => Number(v))
+  if (!n.every((v) => Number.isFinite(v))) return null
+  return [
+    [n[0], n[1], n[2]],
+    [n[3], n[4], n[5]],
+    [n[6], n[7], n[8]],
+  ]
+}
+
+function matrix3x3ToFlat9(mat: any): number[] | null {
+  if (!Array.isArray(mat) || mat.length !== 3) return null
+  if (!mat.every((r: any) => Array.isArray(r) && r.length === 3)) return null
+  const flat = [
+    Number(mat[0][0]),
+    Number(mat[0][1]),
+    Number(mat[0][2]),
+    Number(mat[1][0]),
+    Number(mat[1][1]),
+    Number(mat[1][2]),
+    Number(mat[2][0]),
+    Number(mat[2][1]),
+    Number(mat[2][2]),
+  ]
+  if (!flat.every((v) => Number.isFinite(v))) return null
+  return flat
+}
+
+function toMatrix3x3(v: any): number[][] | null {
+  // Accept either flat9 or 3x3
+  const fromFlat = flat9ToMatrix3x3(v)
+  if (fromFlat) return fromFlat
+  if (Array.isArray(v) && v.length === 3 && v.every((r: any) => Array.isArray(r) && r.length === 3)) {
+    const flat = matrix3x3ToFlat9(v)
+    if (!flat) return null
+    return [
+      [flat[0], flat[1], flat[2]],
+      [flat[3], flat[4], flat[5]],
+      [flat[6], flat[7], flat[8]],
+    ]
+  }
+  return null
+}
+
+function materialToSpecInfo(m: any): Record<string, any> {
+  const info: Record<string, any> = {}
+  info.label = m?.label ?? m?.id
+  info.model = m?.model ?? m?.type ?? 'constant'
+
+  // Preserve payload and material-related extra fields used by backends/translators.
+  if (m?.payload !== undefined) info.payload = m.payload
+  if (m?.gradient !== undefined) info.gradient = m.gradient
+  if (m?.dispersion !== undefined) info.dispersion = m.dispersion
+  if (m?.approximate_complex !== undefined) info.approximate_complex = m.approximate_complex
+  if (m?.center_freq !== undefined) info.center_freq = m.center_freq
+  if (m?.dispersion_fit !== undefined) info.dispersion_fit = m.dispersion_fit
+  if (m?.mu_center_freq !== undefined) info.mu_center_freq = m.mu_center_freq
+  if (m?.mu_dispersion !== undefined) info.mu_dispersion = m.mu_dispersion
+  if (m?.mu_dispersion_fit !== undefined) info.mu_dispersion_fit = m.mu_dispersion_fit
+
+  // Core constitutive parameters
+  const epsTensor = flat9ToMatrix3x3(m?.epsilon)
+  if (epsTensor) {
+    info.eps = epsTensor
+    // Meep parser supports diagonal anisotropy via eps_tensor.
+    info.eps_tensor = epsTensor
+  } else if (m?.eps !== undefined) {
+    info.eps = m.eps
+  } else if (m?.epsilon !== undefined) {
+    info.epsilon = m.epsilon
+  }
+
+  // mu can be scalar or tensor
+  const muTensor = toMatrix3x3(m?.mu)
+  if (muTensor) {
+    info.mu = muTensor
+    info.mu_tensor = muTensor
+  } else if (m?.mu !== undefined) {
+    info.mu = m.mu
+  }
+
+  const xiTensor = toMatrix3x3(m?.xi)
+  if (xiTensor) {
+    info.xi = xiTensor
+    info.xi_tensor = xiTensor
+  } else if (m?.xi !== undefined) {
+    info.xi = m.xi
+  }
+
+  const zetaTensor = toMatrix3x3(m?.zeta)
+  if (zetaTensor) {
+    info.zeta = zetaTensor
+    info.zeta_tensor = zetaTensor
+  } else if (m?.zeta !== undefined) {
+    info.zeta = m.zeta
+  }
+  if (m?.mu_tensor !== undefined) info.mu_tensor = m.mu_tensor
+  if (m?.xi_tensor !== undefined) info.xi_tensor = m.xi_tensor
+  if (m?.zeta_tensor !== undefined) info.zeta_tensor = m.zeta_tensor
+
+  return info
+}
 
 const INITIAL_MATERIALS: MaterialDef[] = [
   { id: 'vac', label: 'Vacuum (eps=1.0)', eps: 1.0, color: '#94a3b8' },
@@ -655,7 +769,9 @@ function App() {
   const [waveforms, setWaveforms] = useState<WaveformDef[]>([])
   const [meshAssets, setMeshAssets] = useState<MeshAsset[]>([])
   const [showMaterialEditor, setShowMaterialEditor] = useState(false)
+  const [showConstitutiveWorkbench, setShowConstitutiveWorkbench] = useState(false)
   const [showWaveformEditor, setShowWaveformEditor] = useState(false)
+  const [showSourceDialog, setShowSourceDialog] = useState(false)
 
   type CadTab = {
     id: string
@@ -856,6 +972,32 @@ function App() {
   const [sshTarget, setSshTarget] = useState('')
   const [sshOptions, setSshOptions] = useState<Record<string, any>>({})
   const [remotePythonExecutable, setRemotePythonExecutable] = useState('')
+
+  const selectedMaterialId = useMemo(() => {
+    try {
+      if (selectedType === 'geometry' && selectedId) {
+        const g = geometry.find((x) => x.id === selectedId)
+        if (g?.materialId) return String(g.materialId)
+      }
+    } catch (e) {}
+    return materials?.[0]?.id ? String(materials[0].id) : null
+  }, [selectedType, selectedId, geometry, materials])
+
+  const buildSpecForSynthesis = ({ preset, targetMaterialId }: { preset: string; targetMaterialId: string | null }) => {
+    const existing = (spec as any)?.run_options?.synthesis || {}
+    return {
+      ...spec,
+      run_options: {
+        ...(spec as any).run_options,
+        analysis_mode: 'synthesis',
+        synthesis: {
+          ...existing,
+          preset,
+          ...(targetMaterialId ? { target_material: targetMaterialId } : {}),
+        },
+      },
+    }
+  }
   const [movieDt, setMovieDt] = useState(2e-15)
   const [movieStart, setMovieStart] = useState(0)
   const [movieStop, setMovieStop] = useState(2e-13)
@@ -1638,13 +1780,10 @@ function App() {
   }, [canvasFocused])
 
   const materialsMap = useMemo(() => {
-    return materials.reduce<Record<string, { model: string; eps: number; payload?: Record<string, unknown> }>>(
-      (acc, m) => {
-        acc[m.id] = { model: m.model ?? 'constant', eps: m.eps, payload: m.payload }
-        return acc
-      },
-      {},
-    )
+    return materials.reduce<Record<string, any>>((acc, m) => {
+      acc[m.id] = materialToSpecInfo(m)
+      return acc
+    }, {})
   }, [materials])
 
   const materialColor = useMemo(() => {
@@ -1919,6 +2058,8 @@ function App() {
         position: [s.position[0], s.position[1], dimension === '3d' ? s.z : 0],
         size: [0, 0, 0],
         waveform_id: s.waveformId ?? undefined,
+        orientation: s.orientation ?? 0,
+        polarization: s.polarization ?? undefined,
         metadata: s.metadata,
       })),
       monitors: monitors.map((m) => {
@@ -1998,6 +2139,15 @@ function App() {
 
   const specText = useMemo(() => JSON.stringify(spec, null, 2), [spec])
 
+  const computedSpecWarnings = useMemo(() => {
+    return computeSpecWarnings({
+      baseWarnings: specWarnings,
+      backend,
+      backendCapabilities: currentBackendCapabilities,
+      materials,
+    })
+  }, [specWarnings, currentBackendCapabilities, materials, backend])
+
   // Resource polling error overlay
   const [resourceError, setResourceError] = useState<string | null>(null)
 
@@ -2052,7 +2202,38 @@ function App() {
     }
     setBusy('Creating run…')
     try {
-      const r = await createRun(project.id, spec)
+      // If in synthesis mode, prefer targeting the currently selected geometry's material.
+      // This keeps "material -> generated candidate geometries" workflows frictionless.
+      let specForRun: any = spec
+      try {
+        if (analysisMode === 'synthesis') {
+          let selectedMaterialId: string | null = null
+          if (selectedType === 'geometry' && selectedId) {
+            const g = geometry.find((x) => x.id === selectedId)
+            if (g?.materialId) selectedMaterialId = String(g.materialId)
+          }
+          if (!selectedMaterialId && materials?.length) selectedMaterialId = String((materials as any[])[0]?.id ?? '') || null
+
+          const existing = (spec as any)?.run_options?.synthesis || {}
+          if (selectedMaterialId && !existing?.target_material) {
+            specForRun = {
+              ...spec,
+              run_options: {
+                ...(spec as any).run_options,
+                synthesis: {
+                  ...existing,
+                  target_material: selectedMaterialId,
+                },
+              },
+            }
+          }
+        }
+      } catch (e) {
+        // If anything above fails, fall back to the current spec
+        specForRun = spec
+      }
+
+      const r = await createRun(project.id, specForRun)
       setRun(r)
       setArtifacts([])
       setLogs('')
@@ -2060,6 +2241,81 @@ function App() {
       setError(e?.message ?? String(e))
     } finally {
       setBusy(null)
+    }
+  }
+
+  // NOTE: bundle artifact parsing helpers live in src/workbench/bundleArtifacts.ts
+
+  async function openBundleArtifactAsNewTab(runId: string, path: string) {
+    setError(null)
+    setBusy('Loading bundle artifact…')
+    try {
+      const payload = await fetchBundleArtifactJson(runId, path)
+      const manifestName = String(payload?.manifest?.name ?? '')
+      const baseName = (path.split('/').pop() || 'Bundle').replace(/\.sunstone\.json$/i, '')
+      const tabName = manifestName || baseName
+
+      const prefix = `cand-${nextId('c').replace(/^c-/, '')}`
+      const materialIdMap = computeBundleMaterialIdMap(payload, prefix)
+      setMaterials((prev) => mergeBundleMaterials(payload, prefix, prev).nextMaterials)
+      const cad = payload?.cad ?? payload?.model ?? {}
+
+      addTab(tabName)
+      const nextGeom = normalizeBundleGeometryItems<GeometryItem>(cad?.geometry, materialIdMap, nextId)
+      setGeometry(nextGeom)
+      setSources(normalizeSources(cad?.sources))
+      setMonitors(normalizeMonitors(cad?.monitors))
+      frameObjects()
+      setBusy(null)
+    } catch (e: any) {
+      setBusy(null)
+      setError(e?.message ?? String(e))
+    }
+  }
+
+  async function insertBundleArtifactIntoSelection(runId: string, path: string) {
+    setError(null)
+    if (!(selectedType === 'geometry' && selectedId)) {
+      alert('Select a geometry object (block or cylinder) to insert into.')
+      return
+    }
+    const target = geometry.find((g) => g.id === selectedId)
+    if (!target || (target.shape !== 'block' && target.shape !== 'cylinder')) {
+      alert('Selected geometry must be a block or cylinder.')
+      return
+    }
+    setBusy('Inserting bundle geometry…')
+    try {
+      const payload = await fetchBundleArtifactJson(runId, path)
+      const prefix = `cand-${nextId('c').replace(/^c-/, '')}`
+      const materialIdMap = computeBundleMaterialIdMap(payload, prefix)
+      setMaterials((prev) => mergeBundleMaterials(payload, prefix, prev).nextMaterials)
+      const cad = payload?.cad ?? payload?.model ?? {}
+      const candGeom = normalizeBundleGeometryItems<GeometryItem>(cad?.geometry, materialIdMap, nextId)
+      const bounds = computeGeometryBounds2D(candGeom)
+      if (!bounds) throw new Error('Candidate bundle has no supported geometry (block/cylinder)')
+
+      const candCenter: [number, number] = [(bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2]
+      const candSize: [number, number] = [Math.max(bounds.maxX - bounds.minX, 1e-12), Math.max(bounds.maxY - bounds.minY, 1e-12)]
+
+      const targetBounds = computeGeometryBounds2D([target])
+      if (!targetBounds) throw new Error('Failed to compute bounds for selected geometry')
+      const targetCenter: [number, number] = [(targetBounds.minX + targetBounds.maxX) / 2, (targetBounds.minY + targetBounds.maxY) / 2]
+      const targetSize: [number, number] = [Math.max(targetBounds.maxX - targetBounds.minX, 1e-12), Math.max(targetBounds.maxY - targetBounds.minY, 1e-12)]
+
+      const sx = targetSize[0] / candSize[0]
+      const sy = targetSize[1] / candSize[1]
+      const inserted = applyScaleAndTranslate2D(candGeom, sx, sy, candCenter, targetCenter, nextId)
+
+      setGeometry((prev) => {
+        const filtered = prev.filter((g) => g.id !== target.id)
+        return [...filtered, ...inserted]
+      })
+      clearSelection()
+      setBusy(null)
+    } catch (e: any) {
+      setBusy(null)
+      setError(e?.message ?? String(e))
     }
   }
 
@@ -3318,11 +3574,11 @@ function App() {
 
     const cad = {
       materials: materials.map((m) => ({
+        ...m,
         id: m.id,
-        label: m.label,
-        eps: m.eps,
-        color: m.color,
-        model: m.model ?? 'constant',
+        label: m.label ?? m.id,
+        color: m.color ?? '#94a3b8',
+        model: m.model ?? m.type ?? 'constant',
       })),
       geometry,
       sources,
@@ -3588,14 +3844,37 @@ function App() {
     }
 
     if (cad?.materials) {
-      const mats = (cad.materials as MaterialDef[]).map((m) => ({
-        id: m.id,
-        label: m.label ?? m.id,
-        eps: Number.isFinite(m.eps) ? m.eps : 1.0,
-        color: m.color ?? '#94a3b8',
-        model: m.model ?? 'constant',
-        payload: m.payload,
-      }))
+      const mats = (cad.materials as any[]).map((m) => {
+        const id = String(m?.id || nextId('mat'))
+        const model = String(m?.model ?? m?.type ?? 'constant')
+        const epsFlat =
+          m?.epsilon != null
+            ? null
+            : matrix3x3ToFlat9(m?.eps_tensor ?? m?.epsilon_tensor ?? m?.eps)
+        const muFlat =
+          (m?.mu != null && !Array.isArray(m?.mu))
+            ? null
+            : matrix3x3ToFlat9(m?.mu_tensor ?? m?.mu)
+        const xiFlat =
+          (m?.xi != null && !Array.isArray(m?.xi))
+            ? null
+            : matrix3x3ToFlat9(m?.xi_tensor ?? m?.xi)
+        const zetaFlat =
+          (m?.zeta != null && !Array.isArray(m?.zeta))
+            ? null
+            : matrix3x3ToFlat9(m?.zeta_tensor ?? m?.zeta)
+        return {
+          ...m,
+          id,
+          label: String(m?.label ?? id),
+          color: String(m?.color ?? '#94a3b8'),
+          model,
+          ...(epsFlat ? { epsilon: epsFlat } : {}),
+          ...(muFlat ? { mu: muFlat } : {}),
+          ...(xiFlat ? { xi: xiFlat } : {}),
+          ...(zetaFlat ? { zeta: zetaFlat } : {}),
+        }
+      })
       setMaterials(mats)
     }
 
@@ -3661,16 +3940,39 @@ function App() {
         return
       }
       if (importKind === 'materials') {
-        const mats = (payload.materials ?? payload) as MaterialDef[]
+        const mats = (payload.materials ?? payload) as any[]
         setMaterials(
-          mats.map((m) => ({
-            id: m.id,
-            label: m.label ?? m.id,
-            eps: Number.isFinite(m.eps) ? m.eps : 1.0,
-            color: m.color ?? '#94a3b8',
-            model: m.model ?? 'constant',
-            payload: m.payload,
-          })),
+          (mats || []).map((m) => {
+            const id = String(m?.id || nextId('mat'))
+            const model = String(m?.model ?? m?.type ?? 'constant')
+            const epsFlat =
+              m?.epsilon != null
+                ? null
+                : matrix3x3ToFlat9(m?.eps_tensor ?? m?.epsilon_tensor ?? m?.eps)
+            const muFlat =
+              (m?.mu != null && !Array.isArray(m?.mu))
+                ? null
+                : matrix3x3ToFlat9(m?.mu_tensor ?? m?.mu)
+            const xiFlat =
+              (m?.xi != null && !Array.isArray(m?.xi))
+                ? null
+                : matrix3x3ToFlat9(m?.xi_tensor ?? m?.xi)
+            const zetaFlat =
+              (m?.zeta != null && !Array.isArray(m?.zeta))
+                ? null
+                : matrix3x3ToFlat9(m?.zeta_tensor ?? m?.zeta)
+            return {
+              ...m,
+              id,
+              label: String(m?.label ?? id),
+              color: String(m?.color ?? '#94a3b8'),
+              model,
+              ...(epsFlat ? { epsilon: epsFlat } : {}),
+              ...(muFlat ? { mu: muFlat } : {}),
+              ...(xiFlat ? { xi: xiFlat } : {}),
+              ...(zetaFlat ? { zeta: zetaFlat } : {}),
+            }
+          }),
         )
         setFileMenuOpen(false)
         return
@@ -6093,6 +6395,7 @@ function App() {
               <div className="muted">Manage materials and dispersion models</div>
               <div>
                 <button onClick={() => setShowMaterialEditor(true)}>Manage materials</button>
+                <button onClick={() => setShowConstitutiveWorkbench(true)} style={{ marginLeft: 8 }}>Constitutive workbench</button>
               </div>
             </div>
             <div className="materials" style={{ marginTop: 12 }}>
@@ -6117,6 +6420,28 @@ function App() {
               ))}
               {showMaterialEditor && (
                 <MaterialEditor materials={materials} setMaterials={setMaterials} onClose={() => setShowMaterialEditor(false)} />
+              )}
+
+              {showConstitutiveWorkbench && (
+                <ConstitutiveWorkbenchDialog
+                  open={showConstitutiveWorkbench}
+                  onClose={() => setShowConstitutiveWorkbench(false)}
+                  projectId={project?.id || null}
+                  materials={materials}
+                  setMaterials={setMaterials}
+                  selectedMaterialId={selectedMaterialId}
+                  buildSpecForSynthesis={buildSpecForSynthesis}
+                  submitOptions={{
+                    mode: executionMode,
+                    pythonExecutable: meepPythonExecutable || undefined,
+                    backendOptions: backendOptionsMap['synthesis'] || {},
+                    sshTarget,
+                    sshOptions,
+                  }}
+                  onOpenMaterialEditor={() => setShowMaterialEditor(true)}
+                  onOpenBundleArtifact={openBundleArtifactAsNewTab}
+                  onInsertBundleArtifact={insertBundleArtifactIntoSelection}
+                />
               )}
 
               {/* Discretize preview modal */}
@@ -6212,67 +6537,13 @@ function App() {
               </div>
             ))}
 
-            <h2>Sources</h2>
-            {sources.length === 0 && <div className="muted">No sources.</div>}
-            {sources.map((s) => (
-              <div key={s.id} className={`list-item ${isSelected(s.id, 'source') ? 'active' : ''}`}>
-                <div>
-                  <strong>{s.component}</strong> <span className="mono">{s.id}</span>
-                </div>
-                <div className="row compact">
-                  <button onClick={() => setSelected(s.id, 'source')}>Edit</button>
-                  <button onClick={() => setSources((prev) => prev.filter((item) => item.id !== s.id))}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
+            <SourcesListPanel sources={sources} isSelected={isSelected} setSelected={setSelected} setSources={setSources} />
 
-            <h2>Detectors</h2>
-            {monitors.length === 0 && <div className="muted">No detectors.</div>}
-            {monitors.map((m) => (
-              <div key={m.id} className={`list-item ${isSelected(m.id, 'monitor') ? 'active' : ''}`}>
-                <div>
-                  <strong>{m.components.join(',')}</strong> <span className="mono">{m.id}</span>
-                </div>
-                <div className="row compact">
-                  <button onClick={() => setSelected(m.id, 'monitor')}>Edit</button>
-                  <button onClick={() => setMonitors((prev) => prev.filter((item) => item.id !== m.id))}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
+            <DetectorsListPanel monitors={monitors} isSelected={isSelected} setSelected={setSelected} setMonitors={setMonitors} />
 
-            <h2>Waveforms</h2>
-            {waveforms.length === 0 && <div className="muted">No waveforms.</div>}
-            {waveforms.map((w) => (
-              <div key={w.id} className="list-item">
-                <div>
-                  <strong>{w.kind}</strong> <span className="mono">{w.label}</span>
-                </div>
-                <div className="row compact">
-                  <button onClick={() => setWaveforms((prev) => prev.filter((item) => item.id !== w.id))}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
+            <WaveformsListPanel waveforms={waveforms} setWaveforms={setWaveforms} />
 
-            <h2>Meshes</h2>
-            {meshAssets.length === 0 && <div className="muted">No mesh assets.</div>}
-            {meshAssets.map((m) => (
-              <div key={m.id} className="list-item">
-                <div>
-                  <strong>{m.format}</strong> <span className="mono">{m.name}</span>
-                </div>
-                <div className="row compact">
-                  <button onClick={() => setMeshAssets((prev) => prev.filter((item) => item.id !== m.id))}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
+            <MeshAssetsListPanel meshAssets={meshAssets} setMeshAssets={setMeshAssets} />
 
             {selectedId && selectedType === 'geometry' && (
               <div className="editor">
@@ -6404,285 +6675,30 @@ function App() {
               </div>
             )}
 
-            {selectedId && selectedType === 'source' && (
-              <div className="editor">
-                <h3>Source Properties</h3>
-                {sources
-                  .filter((s) => s.id === selectedId)
-                  .map((s) => (
-                    <div key={s.id} className="fields">
-                      <label>
-                        Source type
-                        <input
-                          value={s.type ?? 'gaussian_pulse'}
-                          onChange={(e) => updateSource(s.id, { type: e.target.value })}
-                        />
-                      </label>
-                      <label>
-                        Component
-                        <select
-                          value={s.component}
-                          onChange={(e) =>
-                            updateSource(s.id, { component: e.target.value as SourceItem['component'] })
-                          }
-                        >
-                          <option value="Ex">Ex</option>
-                          <option value="Ey">Ey</option>
-                          <option value="Ez">Ez</option>
-                        </select>
-                      </label>
-                      <label>
-                        Position (x, y)
-                        <div className="row">
-                          <input
-                            type="number"
-                            value={s.position[0]}
-                            step="1e-8"
-                            onChange={(e) => {
-                              const v = e.currentTarget.valueAsNumber
-                              updateSource(s.id, {
-                                position: [Number.isFinite(v) ? v : s.position[0], s.position[1]],
-                              })
-                            }}
-                          />
-                          <input
-                            type="number"
-                            value={s.position[1]}
-                            step="1e-8"
-                            onChange={(e) => {
-                              const v = e.currentTarget.valueAsNumber
-                              updateSource(s.id, {
-                                position: [s.position[0], Number.isFinite(v) ? v : s.position[1]],
-                              })
-                            }}
-                          />
-                        </div>
-                      </label>
-                      <label>
-                        Orientation (deg)
-                        <input
-                          type="number"
-                          value={((s.orientation ?? 0) * 180) / Math.PI}
-                          step="1"
-                          onChange={(e) => {
-                            const deg = e.currentTarget.valueAsNumber
-                            const rad = Number.isFinite(deg) ? (deg * Math.PI) / 180 : 0
-                            updateSource(s.id, { orientation: rad })
-                          }}
-                        />
-                      </label> 
-                      {dimension === '3d' && (
-                        <label>
-                          Position (z)
-                          <input
-                            type="number"
-                            value={s.z}
-                            step="1e-8"
-                            onChange={(e) => {
-                              const v = e.currentTarget.valueAsNumber
-                              updateSource(s.id, { z: Number.isFinite(v) ? v : s.z })
-                            }}
-                          />
-                        </label>
-                      )}
-                      <label>
-                        Center frequency (Hz)
-                        <input
-                          type="number"
-                          value={s.centerFreq}
-                          step="1e12"
-                          onChange={(e) => {
-                            const v = e.currentTarget.valueAsNumber
-                            updateSource(s.id, { centerFreq: Number.isFinite(v) ? v : s.centerFreq })
-                          }}
-                        />
-                      </label>
-                      <label>
-                        Fwidth (Hz)
-                        <input
-                          type="number"
-                          value={s.fwidth}
-                          step="1e12"
-                          onChange={(e) => {
-                            const v = e.currentTarget.valueAsNumber
-                            updateSource(s.id, { fwidth: Number.isFinite(v) ? v : s.fwidth })
-                          }}
-                        />
-                      </label>
-                      <label>
-                        Waveform
-                        <select
-                          value={s.waveformId ?? ''}
-                          onChange={(e) => updateSource(s.id, { waveformId: e.target.value || undefined })}
-                        >
-                          <option value="">(default)</option>
-                          {waveforms.map((w) => (
-                            <option key={w.id} value={w.id}>
-                              {w.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  ))}
-              </div>
-            )}
+            <SourcePropertiesPanel
+              selectedId={selectedId}
+              selectedType={selectedType}
+              dimension={dimension}
+              sources={sources}
+              updateSource={updateSource}
+              setSources={setSources}
+              waveforms={waveforms}
+              setWaveforms={setWaveforms}
+              showSourceDialog={showSourceDialog}
+              setShowSourceDialog={setShowSourceDialog}
+            />
 
-            {selectedId && selectedType === 'monitor' && (
-              <div className="editor">
-                <h3>Detector Properties</h3>
-                {monitors
-                  .filter((m) => m.id === selectedId)
-                  .map((m) => (
-                    <div key={m.id} className="fields">
-                      <label>
-                        Components
-                        <div className="row">
-                          {(['Ex', 'Ey', 'Ez'] as const).map((c) => (
-                            <label key={c} className="check">
-                              <input
-                                type="checkbox"
-                                checked={m.components.includes(c)}
-                                onChange={(e) => {
-                                  const next = e.target.checked
-                                    ? [...m.components, c]
-                                    : m.components.filter((v) => v !== c)
-                                  updateMonitor(m.id, { components: next })
-                                }}
-                              />
-                              {c}
-                            </label>
-                          ))}
-                        </div>
-                      </label>
-                      <label>
-                        Position (x, y)
-                        <div className="row">
-                          <input
-                            type="number"
-                            value={m.position[0]}
-                            step="1e-8"
-                            onChange={(e) => {
-                              const v = e.currentTarget.valueAsNumber
-                              updateMonitor(m.id, {
-                                position: [Number.isFinite(v) ? v : m.position[0], m.position[1]],
-                              })
-                            }}
-                          />
-                          <input
-                            type="number"
-                            value={m.position[1]}
-                            step="1e-8"
-                            onChange={(e) => {
-                              const v = e.currentTarget.valueAsNumber
-                              updateMonitor(m.id, {
-                                position: [m.position[0], Number.isFinite(v) ? v : m.position[1]],
-                              })
-                            }}
-                          />
-                        </div>
-                      </label>
-                      {dimension === '3d' && (
-                        <label>
-                          Position (z)
-                          <input
-                            type="number"
-                            value={m.z}
-                            step="1e-8"
-                            onChange={(e) => {
-                              const v = e.currentTarget.valueAsNumber
-                              updateMonitor(m.id, { z: Number.isFinite(v) ? v : m.z })
-                            }}
-                          />
-                        </label>
-                      )}
-                      <label>
-                        dt
-                        <input
-                          type="number"
-                          value={m.dt}
-                          step="1e-16"
-                          onChange={(e) => {
-                            const v = e.currentTarget.valueAsNumber
-                            updateMonitor(m.id, { dt: Number.isFinite(v) ? v : m.dt })
-                          }}
-                        />
-                      </label>
-                      <label>
-                        Orientation (deg)
-                        <input
-                          type="number"
-                          value={((m.orientation ?? 0) * 180) / Math.PI}
-                          step="1"
-                          onChange={(e) => {
-                            const deg = e.currentTarget.valueAsNumber
-                            const rad = Number.isFinite(deg) ? (deg * Math.PI) / 180 : 0
-                            updateMonitor(m.id, { orientation: rad })
-                          }}
-                        />
-                      </label>
-
-                      <label>
-                        Type
-                        <select value={m.shape ?? 'point'} onChange={(e) => updateMonitor(m.id, { shape: e.target.value as MonitorItem['shape'] })}>
-                          <option value="point">Point</option>
-                          <option value="plane">Planar slice</option>
-                        </select>
-                      </label>
-
-                      {m.shape === 'plane' && (
-                        <>
-                          <label>
-                            Size (width, height) ({displayUnits === 'um' ? 'µm' : displayUnits})
-                            <div className="row">
-                              <input
-                                type="number"
-                                value={toDisplayLength(m.size?.[0] ?? 4e-7, displayUnits)}
-                                step={1e-8 * displayScale}
-                                onChange={(e) => {
-                                  const v = e.currentTarget.valueAsNumber
-                                  const next = [(Number.isFinite(v) ? fromDisplayLength(v, displayUnits) : (m.size?.[0] ?? 4e-7)), (m.size?.[1] ?? 4e-7)] as [number, number]
-                                  updateMonitor(m.id, { size: next })
-                                }}
-                              />
-                              <input
-                                type="number"
-                                value={toDisplayLength(m.size?.[1] ?? 4e-7, displayUnits)}
-                                step={1e-8 * displayScale}
-                                onChange={(e) => {
-                                  const v = e.currentTarget.valueAsNumber
-                                  const next = [(m.size?.[0] ?? 4e-7), (Number.isFinite(v) ? fromDisplayLength(v, displayUnits) : (m.size?.[1] ?? 4e-7))] as [number, number]
-                                  updateMonitor(m.id, { size: next })
-                                }}
-                              />
-                            </div>
-                          </label>
-
-                          <label>
-                            Sampling mode
-                            <select value={m.sampling?.mode ?? 'points'} onChange={(e) => updateMonitor(m.id, { sampling: { ...(m.sampling || {}), mode: e.target.value as any } })}>
-                              <option value="plane">Direct plane (backend must support)</option>
-                              <option value="points">Grid of point monitors (fallback / approximate)</option>
-                            </select>
-                          </label>
-
-                          {m.sampling?.mode === 'points' && (
-                            <label>
-                              Grid resolution (nx × ny)
-                              <div className="row">
-                                <input type="number" value={m.sampling?.nx ?? 5} step={1} min={1} onChange={(e) => updateMonitor(m.id, { sampling: { ...(m.sampling || {}), nx: Math.max(1, Number(e.currentTarget.valueAsNumber || 1)) } })} />
-                                <input type="number" value={m.sampling?.ny ?? 5} step={1} min={1} onChange={(e) => updateMonitor(m.id, { sampling: { ...(m.sampling || {}), ny: Math.max(1, Number(e.currentTarget.valueAsNumber || 1)) } })} />
-                              </div>
-                            </label>
-                          )}
-
-                          <div className="muted">Note: Not all backends support direct planar sampling. If unsupported, the UI can fall back to a grid of point monitors (preview shown).</div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-              </div>
-            )}
+            <DetectorPropertiesPanel
+              selectedId={selectedId}
+              selectedType={selectedType}
+              dimension={dimension}
+              monitors={monitors}
+              updateMonitor={updateMonitor}
+              displayUnits={displayUnits}
+              displayScale={displayScale}
+              toDisplayLength={toDisplayLength}
+              fromDisplayLength={fromDisplayLength}
+            />
           </section>
         )}
 
@@ -6740,7 +6756,7 @@ function App() {
             setBoundaryPerFace={setBoundaryPerFace}
             boundaryFaces={boundaryFaces}
             setBoundaryFaces={setBoundaryFaces}
-            specWarnings={specWarnings}
+            specWarnings={computedSpecWarnings}
             showProperties={showProperties}
             setShowProperties={setShowProperties}
             setSnapshotStride={setSnapshotStride}
@@ -6754,13 +6770,13 @@ function App() {
             setMovieStride={setMovieStride}
             movieMaxFrames={movieMaxFrames}
             setMovieMaxFrames={setMovieMaxFrames}
-            specText={specText}
-            specRef={specRef}
             logs={logs}
             onRefreshLogs={onRefreshLogs}
             artifacts={artifacts}
             onRefreshArtifacts={onRefreshArtifacts}
             downloadArtifactUrl={downloadArtifactUrl}
+            onOpenBundleArtifact={openBundleArtifactAsNewTab}
+            onInsertBundleArtifact={insertBundleArtifactIntoSelection}
           />
         )}
       </main>

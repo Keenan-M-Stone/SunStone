@@ -2,31 +2,116 @@
   "$id": "https://example.com/schemas/material.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Material",
-  "description": "Material definition supporting isotropic and tensor constitutive relations",
+  "description": "Material definition supporting isotropic, tensor, dispersive, and (optionally) bianisotropic constitutive relations. This schema is intentionally permissive; the runtime may preserve extra keys under manifest.extra.* or material objects for round-tripping.",
   "type": "object",
   "properties": {
+    "id": {"type": "string"},
     "name": {"type": "string"},
-    "type": {"type": "string", "enum": ["isotropic", "anisotropic", "dispersive"], "default": "isotropic"},
-    "epsilon": {
+    "label": {"type": "string"},
+    "color": {"type": "string"},
+    "model": {"type": "string", "description": "Backend/material model hint (e.g. isotropic, anisotropic, drude, lorentz, pec)."},
+
+    "eps": {
       "oneOf": [
         {"type": "number"},
-        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9}
+        {"type": "string"},
+        {"type": "object", "properties": {"real": {"type": "number"}, "imag": {"type": "number"}}, "required": ["real","imag"], "additionalProperties": true}
       ],
-      "description": "Permittivity: scalar or 3x3 flattened tensor (row-major). Complex values should be expressed as objects in frequency-dependent definitions for dispersive types."
+      "description": "Isotropic scalar permittivity (may be complex as {real,imag})."
     },
     "mu": {
       "oneOf": [
         {"type": "number"},
-        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9}
+        {"type": "string"},
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9},
+        {"type": "object", "properties": {"real": {"type": "number"}, "imag": {"type": "number"}}, "required": ["real","imag"], "additionalProperties": true}
       ],
-      "description": "Permeability: scalar or 3x3 flattened tensor"
+      "description": "Permeability: scalar (possibly complex) or 3x3 flattened tensor (row-major)."
     },
-    "dispersion": {
+
+    "epsilon": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9},
+        {"type": "array", "items": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, "minItems": 3, "maxItems": 3}
+      ],
+      "description": "Permittivity tensor (3x3), as flat-9 or nested 3x3."
+    },
+    "mu_tensor": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9},
+        {"type": "array", "items": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, "minItems": 3, "maxItems": 3}
+      ],
+      "description": "Optional permeability tensor (3x3), as flat-9 or nested 3x3."
+    },
+    "eps_tensor": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9},
+        {"type": "array", "items": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, "minItems": 3, "maxItems": 3}
+      ],
+      "description": "Alternate key for epsilon tensor used by some translators/UI."
+    },
+    "epsilon_tensor": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9},
+        {"type": "array", "items": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, "minItems": 3, "maxItems": 3}
+      ],
+      "description": "Alternate key for epsilon tensor used by some translators/UI."
+    },
+
+    "xi": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9},
+        {"type": "array", "items": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, "minItems": 3, "maxItems": 3},
+        {"type": "number"}
+      ],
+      "description": "Magneto-electric coupling tensor ξ (optional)."
+    },
+    "zeta": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9},
+        {"type": "array", "items": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, "minItems": 3, "maxItems": 3},
+        {"type": "number"}
+      ],
+      "description": "Magneto-electric coupling tensor ζ (optional)."
+    },
+    "xi_tensor": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9},
+        {"type": "array", "items": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, "minItems": 3, "maxItems": 3}
+      ],
+      "description": "Alternate key for ξ tensor used by some exporters."
+    },
+    "zeta_tensor": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9},
+        {"type": "array", "items": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, "minItems": 3, "maxItems": 3}
+      ],
+      "description": "Alternate key for ζ tensor used by some exporters."
+    },
+
+    "approximate_complex": {"type": "boolean"},
+    "center_freq": {"type": "number"},
+    "mu_center_freq": {"type": "number"},
+
+    "dispersion_fit": {
       "type": "object",
-      "description": "Optional dispersion model; keys define model (e.g., 'drude','lorentz') and parameters",
-      "additionalProperties": true
-    }
+      "additionalProperties": true,
+      "properties": {
+        "freqs": {"type": "array", "items": {"type": "number"}},
+        "eps_values": {"type": "array"}
+      }
+    },
+    "mu_dispersion_fit": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "freqs": {"type": "array", "items": {"type": "number"}},
+        "mu_values": {"type": "array"}
+      }
+    },
+
+    "payload": {"type": "object", "additionalProperties": true},
+    "extra": {"type": "object", "additionalProperties": true}
   },
-  "required": ["name", "epsilon"],
-  "additionalProperties": false
+  "additionalProperties": true
 }

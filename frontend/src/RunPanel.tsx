@@ -73,6 +73,8 @@ interface RunPanelProps {
   artifacts: ArtifactEntry[];
   onRefreshArtifacts: () => void;
   downloadArtifactUrl: (runId: string, path: string) => string;
+  onOpenBundleArtifact?: (runId: string, path: string) => void;
+  onInsertBundleArtifact?: (runId: string, path: string) => void;
   pml: [number, number, number];
   setPml: (v: [number, number, number]) => void;
   boundaryType: 'pml'|'pec'|'periodic'|'symmetry'|'impedance';
@@ -177,6 +179,8 @@ const RunPanel: React.FC<RunPanelProps> = ({
   artifacts,
   onRefreshArtifacts,
   downloadArtifactUrl,
+  onOpenBundleArtifact,
+  onInsertBundleArtifact,
 }) => {
   // Backend log text
   const [logText, setLogText] = useState('');
@@ -929,11 +933,30 @@ const RunPanel: React.FC<RunPanelProps> = ({
                     const ext = name.split('.').pop()?.toLowerCase() || '';
                     const isImage = ['png','jpg','jpeg','gif','bmp','webp'].includes(ext);
                     const isText = ['txt','log','json','csv','md'].includes(ext);
+                    const isBundle = name.toLowerCase().endsWith('.sunstone.json');
                     return (
                       <div className="artifact list-item" key={a.path} style={{ fontSize: 15, padding: '12px 10px', alignItems: 'flex-start' }}>
                         <div style={{ flex: 1 }}>
                           <a href={downloadArtifactUrl(run?.id || '', a.path)} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600, fontSize: 16, color: '#e0e0e0', wordBreak: 'break-all' }}>{name}</a>
                           <span className="muted" style={{ marginLeft: 8, fontSize: 13 }}>{(a.size_bytes/1024).toFixed(1)} KB</span>
+                          {isBundle && (
+                            <div className="row compact" style={{ marginTop: 8, gap: 8, flexWrap: 'wrap' }}>
+                              <button
+                                onClick={() => {
+                                  if (!run?.id) return
+                                  if (!onOpenBundleArtifact) return alert('Open bundle action not available in this build')
+                                  onOpenBundleArtifact(run.id, a.path)
+                                }}
+                              >Open as new CAD tab</button>
+                              <button
+                                onClick={() => {
+                                  if (!run?.id) return
+                                  if (!onInsertBundleArtifact) return alert('Insert bundle action not available in this build')
+                                  onInsertBundleArtifact(run.id, a.path)
+                                }}
+                              >Insert into selected geometry</button>
+                            </div>
+                          )}
                           {isImage && (
                             <img src={downloadArtifactUrl(run?.id || '', a.path)} alt={name} style={{ maxWidth: 220, maxHeight: 180, marginTop: 8, borderRadius: 6, border: '1px solid #333' }} />
                           )}

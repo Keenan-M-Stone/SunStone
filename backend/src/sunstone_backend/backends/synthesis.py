@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from .base import Backend
 from datetime import datetime
+from typing import Any
+
+import numpy as np
 
 # We will produce simple layered/inclusion bundles using basic heuristics and the
 # existing python bundle format.
@@ -36,6 +39,58 @@ def _write_bundle_json(out_path: Path, name: str, materials: list, geometry: lis
 class SynthesisBackend(Backend):
     name = 'synthesis'
 
+    def _extract_target_eps_diag(self, spec: dict, target_material_id: str | None) -> tuple[np.ndarray | None, str | None]:
+        materials = spec.get('materials') or {}
+        if not isinstance(materials, dict) or not materials:
+            return None, 'No materials mapping in spec.'
+
+        mid = target_material_id
+        if not mid or mid not in materials:
+            try:
+                mid = next(iter(materials.keys()))
+            except Exception:
+                return None, 'No materials found.'
+
+        info = materials.get(mid)
+        if not isinstance(info, dict):
+            return None, f'Material "{mid}" is not an object.'
+
+        raw: Any = info.get('epsilon')
+        if raw is None:
+            raw = info.get('eps')
+        if raw is None:
+            raw = info.get('permittivity')
+
+        if isinstance(raw, dict) and 'real' in raw:
+            try:
+                v = float(raw.get('real'))
+                return np.array([v, v, v], dtype=float), None
+            except Exception:
+                return None, f'Material "{mid}" epsilon.real is not numeric.'
+
+        if isinstance(raw, (int, float)):
+            v = float(raw)
+            return np.array([v, v, v], dtype=float), None
+
+        try:
+            arr = np.array(raw, dtype=float)
+            if arr.shape == (9,):
+                m = arr.reshape((3, 3))
+                return np.array([m[0, 0], m[1, 1], m[2, 2]], dtype=float), None
+            if arr.shape == (3, 3):
+                return np.array([arr[0, 0], arr[1, 1], arr[2, 2]], dtype=float), None
+        except Exception:
+            pass
+
+        return None, f'Material "{mid}" epsilon is missing or not a supported numeric form.'
+
+    def _solve_layered_fraction(self, eps_target: float, eps_a: float, eps_b: float) -> float:
+        denom = (eps_a - eps_b)
+        if abs(denom) < 1e-12:
+            return 0.5
+        f = (eps_target - eps_b) / denom
+        return float(np.clip(f, 0.01, 0.99))
+
     def run(self, run_dir: Path) -> None:
         spec_path = run_dir / 'spec.json'
         if not spec_path.exists():
@@ -59,52 +114,64 @@ class SynthesisBackend(Backend):
         bundles_dir = outputs_dir / 'bundles'
         bundles_dir.mkdir(parents=True, exist_ok=True)
 
-        # For now implement simple layered and inclusion presets
+        # For now implement simple layered and inclusion presets, guided by target epsilon.
         preset = synth.get('preset', 'layered')
         domain = spec.get('domain', {})
+
+        target_material_id = synth.get('target_material')
+        eps_diag, eps_warn = self._extract_target_eps_diag(spec, str(target_material_id) if target_material_id else None)
+
         if preset == 'layered':
-            # create few candidate layered stacks with varying thicknesses
-            # Create materials: inclusion (high eps) and host (vac)
-            incl_eps = synth.get('incl_eps', 10.0)
-            host_eps = synth.get('host_eps', 1.0)
-            for i, f in enumerate([0.1, 0.2, 0.3, 0.5]):
-                mat_inc = {'id': f'incl-{i}', 'label': f'Incl-{i}', 'eps': incl_eps, 'color': '#f97316'}
-                mat_host = {'id': 'host', 'label': 'Host', 'eps': host_eps, 'color': '#94a3b8'}
-                # layered geometry as alternating thin blocks across x
+            incl_eps = float(synth.get('incl_eps', 10.0))
+            host_eps = float(synth.get('host_eps', 1.0))
+            layers = int(synth.get('layers', 8) or 8)
+            layers = max(2, min(layers, 64))
+
+            if eps_diag is not None:
+                f0 = self._solve_layered_fraction(float(eps_diag[0]), incl_eps, host_eps)
+                candidates = [max(0.01, f0 - 0.15), max(0.01, f0 - 0.05), min(0.99, f0 + 0.05), min(0.99, f0 + 0.15)]
+            else:
+                candidates = [0.1, 0.2, 0.3, 0.5]
+
+            for i, f in enumerate(candidates):
+                mat_inc = {'id': f'incl-{i}', 'label': f'Incl-{i}', 'model': 'constant', 'eps': incl_eps, 'color': '#f97316'}
+                mat_host = {'id': 'host', 'label': 'Host', 'model': 'constant', 'eps': host_eps, 'color': '#94a3b8'}
                 geometry = []
                 total_width = domain.get('cell_size', [1.0, 1.0, 0])[0]
-                n_layers = 4
+                cell_y = domain.get('cell_size', [1.0, 1.0, 0])[1]
+                n_layers = layers
                 w = total_width / n_layers
+                n_incl = max(1, min(n_layers - 1, int(round(f * n_layers))))
                 for j in range(n_layers):
                     gid = f'layer-{i}-{j}'
-                    mat = 'incl-' + str(i) if (j % 2 == 0) else 'host'
+                    mat = 'incl-' + str(i) if (j < n_incl) else 'host'
                     geometry.append({
                         'id': gid,
                         'shape': 'block',
-                        'size': [w, domain.get('cell_size', [1.0, 1.0, 0])[1]],
+                        'size': [w, cell_y],
                         'center': [(-total_width / 2) + (j + 0.5) * w, 0],
-                        'material': mat,
+                        'materialId': mat,
                     })
                 name = f'synthesis-layered-{i}'
                 out_path = bundles_dir / f'{name}.sunstone.json'
                 _write_bundle_json(out_path, name, [mat_host, mat_inc], geometry, domain, spec)
         else:
-            # inclusion-based simple circular inclusions grid
-            incl_eps = synth.get('incl_eps', 10.0)
-            host_eps = synth.get('host_eps', 1.0)
+            incl_eps = float(synth.get('incl_eps', 10.0))
+            host_eps = float(synth.get('host_eps', 1.0))
             for i, r in enumerate([0.05, 0.1, 0.2]):
-                mat_inc = {'id': f'incl-{i}', 'label': f'Incl-{i}', 'eps': incl_eps, 'color': '#f97316'}
-                mat_host = {'id': 'host', 'label': 'Host', 'eps': host_eps, 'color': '#94a3b8'}
+                mat_inc = {'id': f'incl-{i}', 'label': f'Incl-{i}', 'model': 'constant', 'eps': incl_eps, 'color': '#f97316'}
+                mat_host = {'id': 'host', 'label': 'Host', 'model': 'constant', 'eps': host_eps, 'color': '#94a3b8'}
                 geometry = []
                 total_width = domain.get('cell_size', [1.0, 1.0, 0])[0]
                 positions = [(-0.25 * total_width, 0), (0.25 * total_width, 0)]
                 for j, pos in enumerate(positions):
+                    d = 2 * r * total_width
                     geometry.append({
                         'id': f'c{i}-{j}',
                         'shape': 'cylinder',
-                        'size': [r * total_width, 0],
+                        'size': [d, d],
                         'center': [pos[0], pos[1]],
-                        'material': 'incl-' + str(i),
+                        'materialId': 'incl-' + str(i),
                     })
                 name = f'synthesis-incl-{i}'
                 out_path = bundles_dir / f'{name}.sunstone.json'
@@ -115,4 +182,12 @@ class SynthesisBackend(Backend):
         (outputs_dir / 'synthesis_index.json').write_text(json.dumps(index, indent=2))
 
         # write a simple summary
-        (outputs_dir / 'summary.json').write_text(json.dumps({'status': 'done', 'type': 'synthesis', 'count': len(index['bundles'])}))
+        (outputs_dir / 'summary.json').write_text(json.dumps({
+            'status': 'done',
+            'type': 'synthesis',
+            'count': len(index['bundles']),
+            'preset': preset,
+            'target_material': target_material_id,
+            'target_eps_diag': eps_diag.tolist() if eps_diag is not None else None,
+            'warning': eps_warn,
+        }))

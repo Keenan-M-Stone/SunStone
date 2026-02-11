@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -46,21 +46,37 @@ class Bundle:
     spec: dict[str, Any]
 
 
+def _coerce_dataclass(cls, payload: dict[str, Any]):
+    allowed = {f.name for f in fields(cls)}
+    data = {k: payload[k] for k in allowed if k in payload}
+
+    # For forward-compat, accumulate unexpected keys into manifest.extra when available.
+    if "extra" in allowed:
+        extra = payload.get("extra")
+        merged: dict[str, Any] = dict(extra) if isinstance(extra, dict) else {}
+        for k, v in payload.items():
+            if k not in allowed:
+                merged[k] = v
+        data["extra"] = merged
+
+    return cls(**data)
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text())
 
 
 def load_bundle(bundle_dir: Path) -> Bundle:
-    manifest = BundleManifest(**_read_json(bundle_dir / "manifest.json"))
-    cad = BundleCad(**_read_json(bundle_dir / manifest.cad_path))
+    manifest = _coerce_dataclass(BundleManifest, _read_json(bundle_dir / "manifest.json"))
+    cad = _coerce_dataclass(BundleCad, _read_json(bundle_dir / manifest.cad_path))
     spec = _read_json(bundle_dir / manifest.spec_path)
     return Bundle(manifest=manifest, cad=cad, spec=spec)
 
 
 def load_bundle_json(path: Path) -> Bundle:
     payload = _read_json(path)
-    manifest = BundleManifest(**payload["manifest"])
-    cad = BundleCad(**payload["cad"])
+    manifest = _coerce_dataclass(BundleManifest, payload["manifest"])
+    cad = _coerce_dataclass(BundleCad, payload["cad"])
     spec = payload["spec"]
     return Bundle(manifest=manifest, cad=cad, spec=spec)
 

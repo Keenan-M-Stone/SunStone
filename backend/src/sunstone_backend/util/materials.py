@@ -156,8 +156,9 @@ def parse_epsilon_for_meep(info: dict):
             imag = float(eps.get("imag", 0.0))
             eps_c = complex(real, imag)
             # If the caller provided a full dispersion_fit, use least-squares fit
+            # when (and only when) they explicitly asked to approximate complex eps.
             df = info.get("dispersion_fit")
-            if df:
+            if df and info.get("approximate_complex"):
                 freqs = df.get("freqs") or df.get("frequencies")
                 eps_vals = df.get("eps_values") or df.get("eps")
                 if freqs and eps_vals and len(freqs) == len(eps_vals):
@@ -186,7 +187,7 @@ def parse_epsilon_for_meep(info: dict):
         try:
             eps_c = complex(eps)
             df = info.get("dispersion_fit")
-            if df:
+            if df and info.get("approximate_complex"):
                 freqs = df.get("freqs") or df.get("frequencies")
                 eps_vals = df.get("eps_values") or df.get("eps")
                 if freqs and eps_vals and len(freqs) == len(eps_vals):
