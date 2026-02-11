@@ -960,7 +960,7 @@ const RunPanel: React.FC<RunPanelProps> = ({
                       try {
                         const s = JSON.parse(editedSpec || '{}')
                         setTranslating(true)
-                        const res = await fetch(`/backends/${encodeURIComponent(backend)}/translate`, {
+                        const res = await fetch(`/api/backends/${encodeURIComponent(backend)}/translate`, {
                           method: 'POST',
                           headers: { 'content-type': 'application/json' },
                           body: JSON.stringify(s),

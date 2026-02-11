@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 
 function nextId(prefix = 'tab') {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`
