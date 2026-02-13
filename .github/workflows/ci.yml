@@ -9,9 +9,10 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       matrix:
-        python-version: [3.11, 3.12]
+        python-version: [3.13]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -23,11 +24,11 @@ jobs:
           cd backend
           python -m pip install --upgrade pip
           pip install -e .
-          pip install pytest
+          pip install pytest pytest-timeout
       - name: Run backend tests
         run: |
           cd backend
-          pytest -q
+          pytest -q --durations=25 --timeout=300
 
   frontend-tests:
     runs-on: ubuntu-latest
@@ -57,6 +58,7 @@ jobs:
 
   code-quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: backend-tests
     steps:
       - uses: actions/checkout@v4

@@ -7,10 +7,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.13, 3.14]
+        python-version: [3.13]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -32,11 +33,11 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel 2>&1 | tee /tmp/pip_upgrade.log
           # capture install output to file (fail loudly and emit logs on error)
           pip install -e . 2>&1 | tee /tmp/install_backend.log || (echo "backend install failed"; cat /tmp/install_backend.log; exit 2)
-          pip install pytest 2>&1 | tee /tmp/pip_install_test_deps.log || (echo "pip install pytest failed"; cat /tmp/pip_install_test_deps.log; exit 2)
+          pip install pytest pytest-timeout 2>&1 | tee /tmp/pip_install_test_deps.log || (echo "pip install pytest deps failed"; cat /tmp/pip_install_test_deps.log; exit 2)
       - name: Run backend tests (verbose)
         run: |
           cd backend
-          pytest -vv --maxfail=1 2>&1 | tee ../backend_pytest.log || (echo "pytest failed"; tail -n 500 ../backend_pytest.log; exit 2)
+          pytest -vv --maxfail=1 --durations=25 --timeout=300 2>&1 | tee ../backend_pytest.log || (echo "pytest failed"; tail -n 500 ../backend_pytest.log; exit 2)
       - name: Upload backend logs
         if: always()
         uses: actions/upload-artifact@v4

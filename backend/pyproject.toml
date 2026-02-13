@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "SunStone control plane (FastAPI) + local worker runner"
 readme = "README.md"
 requires-python = ">=3.13"
-license = {text = "TBD"}
+license = {text = "MIT"}
 authors = [{name = "SunStone contributors"}]
 dependencies = [
   "fastapi>=0.115",
@@ -21,6 +21,12 @@ dependencies = [
   "psutil>=5.9",
   "zarr>=3",
   "numpy>=2",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.2",
+  "pytest-timeout>=2.3.1",
 ]
 
 [project.scripts]
@@ -46,5 +52,9 @@ no_implicit_optional = true
 strict = false
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q --durations=25"
 testpaths = ["tests"]
+
+# Kill hung tests reliably (requires pytest-timeout).
+timeout = 300
+timeout_method = "signal"

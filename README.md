@@ -73,4 +73,12 @@ SunStone provides some workflows and features that are rare in similar open-sour
 
 Please see `docs/foss-optics-fdtd-spec.md` for the full design spec, UI references, and troubleshooting tips.
 
+## License
+
+SunStone is licensed under the MIT License. See:
+
+- `LICENSE`
+- `THIRD_PARTY_NOTICES.md`
+- `ATTRIBUTION.md`
+
 ---

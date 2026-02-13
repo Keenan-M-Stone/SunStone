@@ -4338,26 +4338,26 @@ function App() {
                 />
               </label>
               <label>
-                Nudge step (m)
+                Nudge step ({displayUnits === 'um' ? 'µm' : displayUnits})
                 <input
                   type="number"
-                  step="1e-9"
-                  value={nudgeStep}
+                  step="any"
+                  value={toDisplayLength(nudgeStep, displayUnits)}
                   onChange={(e) => {
                     const v = e.currentTarget.valueAsNumber
-                    setNudgeStep(Number.isFinite(v) ? v : nudgeStep)
+                    setNudgeStep(Number.isFinite(v) ? fromDisplayLength(v, displayUnits) : nudgeStep)
                   }}
                 />
               </label>
               <label>
-                Nudge step fast (m)
+                Nudge step fast ({displayUnits === 'um' ? 'µm' : displayUnits})
                 <input
                   type="number"
-                  step="1e-8"
-                  value={nudgeStepFast}
+                  step="any"
+                  value={toDisplayLength(nudgeStepFast, displayUnits)}
                   onChange={(e) => {
                     const v = e.currentTarget.valueAsNumber
-                    setNudgeStepFast(Number.isFinite(v) ? v : nudgeStepFast)
+                    setNudgeStepFast(Number.isFinite(v) ? fromDisplayLength(v, displayUnits) : nudgeStepFast)
                   }}
                 />
               </label>
