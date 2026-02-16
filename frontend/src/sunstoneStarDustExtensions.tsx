@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { StarDustAppExtensions } from './stardust'
+import EmPolarizationEditor from './polarization/EmPolarizationEditor'
 
 function ensureFlat9(v: any): number[] {
   if (Array.isArray(v) && v.length === 9) {
@@ -99,5 +100,15 @@ function SunStoneAdvancedTensorFields({
 export const sunstoneStarDustExtensions: StarDustAppExtensions = {
   renderMaterialEditorFields: ({ material, updateMaterial }: { material: any; updateMaterial: (patch: any) => void }) => (
     <SunStoneAdvancedTensorFields material={material} updateMaterial={updateMaterial} />
+  ),
+
+  renderSourceEditorFields: ({ source, updateSource }: { source: any; updateSource: (patch: any) => void }) => (
+    <div style={{ marginTop: 12 }}>
+      <h4>Polarization</h4>
+      <EmPolarizationEditor
+        value={(source as any)?.polarization}
+        onChange={(next) => updateSource({ polarization: next })}
+      />
+    </div>
   ),
 }
