@@ -1,1 +1,1 @@
-export { MeshManager as default } from '@stardust/ui'
+export { MeshManager as default } from './stardust'
