@@ -7,6 +7,9 @@ DEV_DIR="$DATA_DIR/dev"
 PID_DIR="$DEV_DIR/pids"
 LOG_DIR="$DEV_DIR/logs"
 
+BACKEND_PORT="${SUNSTONE_BACKEND_PORT:-8000}"
+FRONTEND_PORT_DEFAULT="${SUNSTONE_FRONTEND_PORT:-5173}"
+
 BACKEND_PID_FILE="$PID_DIR/backend.pid"
 FRONTEND_PID_FILE="$PID_DIR/frontend.pid"
 FRONTEND_PORT_FILE="$DEV_DIR/frontend.port"
@@ -44,9 +47,9 @@ show_one() {
 
 mkdir -p "$PID_DIR" "$LOG_DIR" >/dev/null 2>&1 || true
 
-show_one "Backend" "$BACKEND_PID_FILE" "http://127.0.0.1:8000" "$BACKEND_LOG"
-FRONTEND_PORT="5173"
+show_one "Backend" "$BACKEND_PID_FILE" "http://127.0.0.1:${BACKEND_PORT}" "$BACKEND_LOG"
+FRONTEND_PORT="$FRONTEND_PORT_DEFAULT"
 if [[ -f "$FRONTEND_PORT_FILE" ]]; then
-  FRONTEND_PORT="$(cat "$FRONTEND_PORT_FILE" || echo "5173")"
+  FRONTEND_PORT="$(cat "$FRONTEND_PORT_FILE" || echo "$FRONTEND_PORT_DEFAULT")"
 fi
 show_one "Frontend" "$FRONTEND_PID_FILE" "http://127.0.0.1:${FRONTEND_PORT}" "$FRONTEND_LOG"
