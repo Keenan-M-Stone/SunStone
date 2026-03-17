@@ -3,6 +3,9 @@ type ComputeSpecWarningsArgs = {
   backend: string
   backendCapabilities?: any
   materials: any[]
+  boundaryType?: string
+  sources?: any[]
+  monitors?: any[]
 }
 
 function isAllZeroTensor(v: any): boolean {
@@ -60,11 +63,67 @@ function hasNonTrivialMu(m: any): boolean {
   return false
 }
 
-export function computeSpecWarnings({ baseWarnings, backend, backendCapabilities, materials }: ComputeSpecWarningsArgs): string[] | null {
+export function computeSpecWarnings({ baseWarnings, backend, backendCapabilities, materials, boundaryType, sources, monitors }: ComputeSpecWarningsArgs): string[] | null {
   const warnings: string[] = [...(baseWarnings || [])]
   const caps = backendCapabilities || {}
   const allowedModels = Array.isArray((caps as any).material_models) ? (caps as any).material_models : []
+  const allowedBoundaryTypes: string[] = Array.isArray((caps as any).boundary_types) ? (caps as any).boundary_types : []
+  const allowedSourceTypes: string[] = Array.isArray((caps as any).source_types) ? (caps as any).source_types : []
+  const allowedDetectorTypes: string[] = Array.isArray((caps as any).detector_types) ? (caps as any).detector_types : []
   const backendKey = String(backend || '').toLowerCase()
+
+  // --- Stub backend notice ---
+  const STUB_BACKENDS = ['ceviche', 'opal', 'scuffem', 'pygdm']
+  if (STUB_BACKENDS.includes(backendKey)) {
+    const label = (caps as any).label || backend
+    const msg = `"${label}" backend is currently a stub — runs will produce placeholder output only. Full solver integration is not yet implemented.`
+    if (!warnings.includes(msg)) warnings.push(msg)
+  }
+
+  // --- Boundary type compatibility ---
+  if (boundaryType && allowedBoundaryTypes.length > 0 && !allowedBoundaryTypes.includes(boundaryType)) {
+    const msg = `Backend "${backend}" does not support "${boundaryType}" boundary conditions. Supported types: ${allowedBoundaryTypes.join(', ')}.`
+    if (!warnings.includes(msg)) warnings.push(msg)
+  }
+
+  // --- Source type compatibility ---
+  if (allowedSourceTypes.length > 0 && Array.isArray(sources)) {
+    for (const src of sources) {
+      const srcType = src?.sourceType || src?.type
+      if (srcType && !allowedSourceTypes.includes(srcType)) {
+        const msg = `Backend "${backend}" does not support "${srcType}" source type. Supported: ${allowedSourceTypes.join(', ')}.`
+        if (!warnings.includes(msg)) {
+          warnings.push(msg)
+          break // one warning per type is enough
+        }
+      }
+    }
+  }
+
+  // --- Detector type compatibility ---
+  if (allowedDetectorTypes.length > 0 && Array.isArray(monitors)) {
+    for (const mon of monitors) {
+      const monType = mon?.detectorType || mon?.type
+      if (monType && !allowedDetectorTypes.includes(monType)) {
+        const msg = `Backend "${backend}" does not support "${monType}" detector type. Supported: ${allowedDetectorTypes.join(', ')}.`
+        if (!warnings.includes(msg)) {
+          warnings.push(msg)
+          break
+        }
+      }
+    }
+  }
+
+  // --- Anisotropic material on isotropic-only backend ---
+  const hasAnisotropic = (materials || []).some((m: any) => {
+    const eps = getFlat9(m?.epsilon)
+    if (!eps) return false
+    return hasOffDiagonal(eps)
+  })
+  if (hasAnisotropic && allowedModels.length > 0 && !allowedModels.includes('anisotropic')) {
+    const msg = `Backend "${backend}" only supports isotropic materials; anisotropic ε tensors will be ignored or rejected.`
+    if (!warnings.includes(msg)) warnings.push(msg)
+  }
 
   const hasBianisotropic = (materials || []).some((m: any) => {
     const xi = (m as any)?.xi

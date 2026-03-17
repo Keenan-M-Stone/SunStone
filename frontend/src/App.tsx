@@ -2145,8 +2145,11 @@ function App() {
       backend,
       backendCapabilities: currentBackendCapabilities,
       materials,
+      boundaryType,
+      sources,
+      monitors,
     })
-  }, [specWarnings, currentBackendCapabilities, materials, backend])
+  }, [specWarnings, currentBackendCapabilities, materials, backend, boundaryType, sources, monitors])
 
   // Resource polling error overlay
   const [resourceError, setResourceError] = useState<string | null>(null)
