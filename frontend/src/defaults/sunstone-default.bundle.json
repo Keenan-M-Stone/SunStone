@@ -1,0 +1,55 @@
+{
+  "format": "sunstone.bundle",
+  "version": "0.1",
+  "manifest": {
+    "name": "SunStone Default",
+    "mode": "cad",
+    "dimension": "2d"
+  },
+  "cad": {
+    "materials": [
+      { "id": "vac", "label": "Vacuum (eps=1.0)", "eps": 1.0, "color": "#94a3b8" },
+      { "id": "sio2", "label": "SiO2 (eps=2.1)", "eps": 2.1, "color": "#38bdf8" },
+      { "id": "si", "label": "Si (eps=12.0)", "eps": 12.0, "color": "#f97316" },
+      { "id": "al2o3", "label": "Al2O3 (eps=3.1)", "eps": 3.1, "color": "#a78bfa" },
+      { "id": "pec", "label": "PEC (perfect conductor)", "eps": 1.0, "color": "#e2e8f0", "model": "pec" }
+    ],
+    "geometry": [
+      {
+        "id": "geom-default-1",
+        "shape": "block",
+        "center": [0, 0],
+        "centerZ": 0,
+        "size": [6e-7, 2e-7],
+        "sizeZ": 2e-7,
+        "materialId": "si"
+      }
+    ],
+    "sources": [
+      {
+        "id": "src-default-1",
+        "position": [-6e-7, 0],
+        "z": 0,
+        "component": "Ez",
+        "centerFreq": 3.75e14,
+        "fwidth": 5e13
+      }
+    ],
+    "monitors": [
+      {
+        "id": "mon-default-1",
+        "position": [6e-7, 0],
+        "z": 0,
+        "components": ["Ez"],
+        "dt": 1e-16,
+        "shape": "point",
+        "size": [4e-7, 4e-7],
+        "sampling": { "mode": "points", "nx": 5, "ny": 5, "fallbackToPoints": true }
+      }
+    ],
+    "domain": {
+      "cell_size": [2e-6, 2e-6, 1e-6],
+      "pml": [2e-7, 2e-7, 2e-7]
+    }
+  }
+}

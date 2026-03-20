@@ -309,16 +309,15 @@ function materialToSpecInfo(m: any): Record<string, any> {
   return info
 }
 
-const INITIAL_MATERIALS: MaterialDef[] = [
-  { id: 'vac', label: 'Vacuum (eps=1.0)', eps: 1.0, color: '#94a3b8' },
-  { id: 'sio2', label: 'SiO2 (eps=2.1)', eps: 2.1, color: '#38bdf8' },
-  { id: 'si', label: 'Si (eps=12.0)', eps: 12.0, color: '#f97316' },
-  { id: 'al2o3', label: 'Al2O3 (eps=3.1)', eps: 3.1, color: '#a78bfa' },
-  { id: 'pec', label: 'PEC (perfect conductor)', eps: 1.0, color: '#e2e8f0', model: 'pec' },
-]
+import sunstoneDefaultBundle from './defaults/sunstone-default.bundle.json'
+import { loadDefaultScene } from './services/defaultBundle'
 
-const DEFAULT_DOMAIN: [number, number, number] = [2e-6, 2e-6, 1e-6]
-const DEFAULT_PML: [number, number, number] = [2e-7, 2e-7, 2e-7]
+const SUNSTONE_DEFAULTS = loadDefaultScene(sunstoneDefaultBundle as Record<string, unknown>)
+
+const INITIAL_MATERIALS: MaterialDef[] = SUNSTONE_DEFAULTS.materials as MaterialDef[]
+
+const DEFAULT_DOMAIN: [number, number, number] = SUNSTONE_DEFAULTS.cellSize
+const DEFAULT_PML: [number, number, number] = SUNSTONE_DEFAULTS.pml ?? [2e-7, 2e-7, 2e-7]
 const DEFAULT_KEYMAP: KeymapConfig = {
   panMode: 'middle',
   zoomDirection: 'normal',
@@ -781,41 +780,10 @@ function App() {
     monitors: MonitorItem[]
   }
 
-  // initial per-tab defaults (migrated from previous single-canvas state)
-  const initialGeometry: GeometryItem[] = [
-    {
-      id: nextId('geom'),
-      shape: 'block',
-      center: [0, 0],
-      centerZ: 0,
-      size: [6e-7, 2e-7],
-      sizeZ: 2e-7,
-      materialId: 'si',
-    },
-  ]
-  const initialSources: SourceItem[] = [
-    {
-      id: nextId('src'),
-      position: [-6e-7, 0],
-      z: 0,
-      component: 'Ez',
-      centerFreq: 3.75e14,
-      fwidth: 5e13,
-    },
-  ]
-  const initialMonitors: MonitorItem[] = [
-    {
-      id: nextId('mon'),
-      position: [6e-7, 0],
-      z: 0,
-      components: ['Ez'],
-      dt: 1e-16,
-      // defaults for detector type: point by default, with sensible planar defaults if user switches
-      shape: 'point',
-      size: [4e-7, 4e-7],
-      sampling: { mode: 'points', nx: 5, ny: 5, fallbackToPoints: true },
-    },
-  ]
+  // initial per-tab defaults loaded from the default bundle
+  const initialGeometry: GeometryItem[] = SUNSTONE_DEFAULTS.geometry as GeometryItem[]
+  const initialSources: SourceItem[] = SUNSTONE_DEFAULTS.sources as SourceItem[]
+  const initialMonitors: MonitorItem[] = SUNSTONE_DEFAULTS.monitors as MonitorItem[]
 
   const [cadTabs, setCadTabs] = useState<CadTab[]>(() => {
     const tab: CadTab = { id: nextId('tab'), name: 'Tab 1', geometry: initialGeometry, sources: initialSources, monitors: initialMonitors }

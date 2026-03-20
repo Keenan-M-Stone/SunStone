@@ -1,7 +1,7 @@
 # SunStone
 
 SunStone is a free and open source simulation platform for computational electromagnetics.  
-The project combines a modern React/Vite frontend and a Python FastAPI control plane with modular solver workers (Meep, dummy, and additional backends).
+Built on the [StarDust](../StarDust/) generic CAD-to-simulation platform, it combines a modern React/Vite frontend and a Python FastAPI control plane with modular solver workers (Meep, dummy, and additional backends).
 
 Key components:
 - **Frontend (Vite + React + TypeScript)** — project/run editor, materials, source/monitor placement, 3D preview, and results visualization.
